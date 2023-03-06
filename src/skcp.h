@@ -6,18 +6,6 @@
 
 #include "ikcp.h"
 
-/* -------------------------------------------------------------------------- */
-/*                                   cipher                                   */
-/* -------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------- */
-/*                                  protocol                                  */
-/* -------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------- */
-/*                                    skcp                                    */
-/* -------------------------------------------------------------------------- */
-
 #define SKCP_MAX_CONNS 1024
 #define SKCP_IV_LEN 32
 #define SKCP_KEY_LEN 32
@@ -45,12 +33,11 @@ typedef struct {
     skcp_t *skcp;
     void *user_data;
     uint32_t id;
-    IUINT64 last_r_tm;  // 最后一次读操作的时间戳
-    IUINT64 last_w_tm;  // 最后一次写操作的时间戳
-    IUINT64 estab_tm;
+    uint64_t last_r_tm;  // 最后一次读操作的时间戳
+    uint64_t last_w_tm;  // 最后一次写操作的时间戳
+    uint64_t estab_tm;
     ikcpcb *kcp;
     SKCP_CONN_ST status;
-    // waiting_buf_t *waiting_buf_q;  // 待发送消息的队列头
     struct sockaddr_in dest_addr;
     char ticket[SKCP_TICKET_LEN + 1];
     char iv[SKCP_IV_LEN + 1];

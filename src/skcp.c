@@ -356,7 +356,7 @@ inline static int udp_send(skcp_t *skcp, const char *buf, int len, struct sockad
         return -1;
     }
 
-    // TODO: 加密
+    // 加密
     char *cipher_buf = NULL;
     int cipher_buf_len = 0;
     if (strlen(skcp->conf->key) > 0) {
@@ -590,13 +590,10 @@ static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
     }
     memcpy(conn->iv, p + 1, cmd->payload_len - i - 2);
     conn->status = SKCP_CONN_ST_ON;
-    // TODO: set ticket
+    // TODO: set ticket, to the user to resolv
     // memcpy(conn->ticket, , SKCP_TICKET_LEN);
 
-    // TODO: for test
-    char tmp[128] = {0};
-    sprintf(tmp, "on_req_cid_ack_cmd cid: %d iv: %s", conn->id, conn->iv);
-    _LOG("%s", tmp);
+    _LOG("on_req_cid_ack_cmd cid: %d iv: %s", conn->id, conn->iv);
 
     skcp->conf->on_recv(conn->id, NULL, 0, SKCP_MSG_TYPE_CID_ACK);
 }
@@ -618,7 +615,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         return;
     }
 
-    // TODO: 解密
+    // 解密
     char *plain_buf = raw_buf;
     int plain_len = bytes;
     if (strlen(skcp->conf->key) > 0) {
@@ -740,7 +737,6 @@ int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len) {
     if (!conn || conn->status != SKCP_CONN_ST_ON) {
         return -1;
     }
-    // TODO:
     int rt = kcp_send_raw(conn, buf, len);
     return rt;
 }
@@ -854,39 +850,3 @@ void skcp_free(skcp_t *skcp) {
 
     _FREEIF(skcp);
 }
-
-/* -------------------------------------------------------------------------- */
-/*                                    test                                    */
-/* -------------------------------------------------------------------------- */
-
-// static void test_slots() {
-//     _D("start");
-//     skcp_conn_slots_t *slots = init_conn_slots(100);
-//     assert(slots != NULL);
-
-//     _D("--- 111 max_cnt: %u remain_cnt: %u remain_idx: %d", slots->max_cnt, slots->remain_cnt, slots->remain_idx);
-//     skcp_conn_t *conn = (skcp_conn_t *)_ALLOC(sizeof(skcp_conn_t));
-//     uint32_t cid = 0;
-
-//     for (size_t i = 0; i < 100; i++) {
-//         cid = add_new_conn_to_slots(slots, conn);
-//         assert(cid > 0);
-//         _D("--- 222 max_cnt: %u remain_cnt: %u remain_idx: %d", slots->max_cnt, slots->remain_cnt,
-//         slots->remain_idx); _D("cid: %u", cid);
-//     }
-//     for (size_t i = 0; i < 100; i++) {
-//         int rt = del_conn_from_slots(slots, cid);
-//         assert(rt == 0);
-//         _D("--- 333 max_cnt: %u remain_cnt: %u remain_idx: %d", slots->max_cnt, slots->remain_cnt,
-//         slots->remain_idx);
-//     }
-
-//     _FREEIF(conn);
-//     free_conn_slots(slots);
-//     _D("end");
-// }
-
-// int main(int argc, char const *argv[]) {
-//     // test_slots();
-//     return 0;
-// }
