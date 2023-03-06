@@ -20,6 +20,7 @@
 
 #define SKCP_MAX_CONNS 1024
 #define SKCP_IV_LEN 32
+#define SKCP_KEY_LEN 32
 #define SKCP_TICKET_LEN 32
 
 typedef enum {
@@ -51,8 +52,8 @@ typedef struct {
     SKCP_CONN_ST status;
     // waiting_buf_t *waiting_buf_q;  // 待发送消息的队列头
     struct sockaddr_in dest_addr;
-    char ticket[SKCP_TICKET_LEN];
-    char iv[SKCP_IV_LEN];
+    char ticket[SKCP_TICKET_LEN + 1];
+    char iv[SKCP_IV_LEN + 1];
     struct ev_timer *kcp_update_watcher;
     struct ev_timer *timeout_watcher;
 } skcp_conn_t;
@@ -72,17 +73,17 @@ typedef struct {
 
     char *addr;
     uint16_t port;
-    char *key;
+    char key[SKCP_KEY_LEN + 1];
     int r_buf_size;
     int kcp_buf_size;
     int timeout_interval;  // 单位：秒
     uint32_t max_conn_cnt;
-    char ticket[SKCP_TICKET_LEN];
+    char ticket[SKCP_TICKET_LEN + 1];
 
-    void (*on_accept)(skcp_t *skcp, skcp_conn_t *conn);
-    void (*on_recv)(skcp_t *skcp, skcp_conn_t *conn, char *buf, int buf_len, SKCP_MSG_TYPE msg_type);
-    void (*on_close)(skcp_t *skcp, uint32_t cid);
-    int (*on_check_ticket)(skcp_t *skcp, char *ticket, int len);
+    void (*on_accept)(uint32_t cid);
+    void (*on_recv)(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type);
+    void (*on_close)(uint32_t cid);
+    int (*on_check_ticket)(char *ticket, int len);
 } skcp_conf_t;
 
 typedef struct {
@@ -109,43 +110,8 @@ struct skcp_s {
 skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP_MODE mode);
 void skcp_free(skcp_t *skcp);
 int skcp_req_cid(skcp_t *skcp, const char *ticket, int len);
-
 int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len);
-// skcp_conn_slots_t *skcp_init_conn_slots(skcp_t *skcp, uint32_t max_conns);
-// void skcp_free_conn_slots(skcp_t *skcp);
-// uint32_t skcp_create_conn(skcp_t *skcp);
 void skcp_close_conn(skcp_t *skcp, uint32_t cid);
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid);
-
-///////////////////////////////
-
-// #define KCP_WAITIMG_BUF_SZ 2048
-
-// #define SKCP_HTKEY_LEN 50
-
-// typedef int skcp_conn_id_t;
-
-// // typedef enum {
-// //     SKCP_CONN_ST_ON = 1,
-// //     SKCP_CONN_ST_READY,
-// //     SKCP_CONN_ST_OFF,
-// //     SKCP_CONN_ST_CAN_OFF,
-// // } SKCP_CONN_ST;
-
-// typedef struct skcp_s skcp_t;
-// typedef struct skcp_conn_s skcp_conn_t;
-
-// typedef struct waiting_buf_s waiting_buf_t;
-// struct waiting_buf_s {
-//     char buf[KCP_WAITIMG_BUF_SZ];
-//     int len;
-//     waiting_buf_t *next, *prev;
-// };
-
-// skcp_conn_id_t skcp_new_conn(skt_kcp_t *skt_kcp, uint32_t sess_id, struct sockaddr_in *sock_addr);
-// void skcp_close_conn(skt_kcp_t *skt_kcp, char *htkey);
-// int skcp_send_data(skt_kcp_t *skt_kcp, char *htkey, const char *buf, int len);
-// int skcp_send_ctrl(skt_kcp_t *skt_kcp, char *htkey, const char *buf, int len);
-// skcp_conn_t *skcp_get_conn(skt_kcp_t *skt_kcp, char *htkey);
 
 #endif

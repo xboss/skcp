@@ -14,18 +14,18 @@
 
 static skcp_t *skcp = NULL;
 
-static void on_accept(skcp_t *skcp, skcp_conn_t *conn) { _LOG("server accept cid: %u", conn->id); }
-static void on_recv(skcp_t *skcp, skcp_conn_t *conn, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
-    char msg[1500] = {0};
+static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
+static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
+    char msg[5000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
     _LOG("server on_recv msg_type: %d len: %d  msg: %s", msg_type, buf_len, msg);
-    int rt = skcp_send(skcp, conn->id, buf, buf_len);
+    int rt = skcp_send(skcp, cid, buf, buf_len);
     assert(rt >= 0);
 }
-static void on_close(skcp_t *skcp, uint32_t cid) { _LOG("server on_close cid: %u", cid); }
-static int on_check_ticket(skcp_t *skcp, char *ticket, int len) { return 0; }
+static void on_close(uint32_t cid) { _LOG("server on_close cid: %u", cid); }
+static int on_check_ticket(char *ticket, int len) { return 0; }
 
 /* -------------------------------------------------------------------------- */
 /*                                    main                                    */
@@ -42,6 +42,7 @@ int main(int argc, char const *argv[]) {
 #endif
 
     skcp_conf_t *conf = malloc(sizeof(skcp_conf_t));
+    memset(conf, 0, sizeof(skcp_conf_t));
     conf->interval = 10;
     conf->r_buf_size = conf->mtu = 1024;
     conf->rcvwnd = 128;
@@ -55,8 +56,9 @@ int main(int argc, char const *argv[]) {
 
     conf->addr = "127.0.0.1";  // argv[1];
     conf->port = 6060;         // atoi(argv[2]);
-    conf->key = "12345678123456781234567812345678";
-    conf->kcp_buf_size = 5000;  // 2048;
+    memcpy(conf->key, &"12345678123456781234567812345678", SKCP_KEY_LEN);
+    // conf->key = ;
+    conf->kcp_buf_size = 2048;  // 2048;
     conf->timeout_interval = 1;
     conf->max_conn_cnt = 1024;
 
@@ -64,6 +66,15 @@ int main(int argc, char const *argv[]) {
     conf->on_check_ticket = on_check_ticket;
     conf->on_close = on_close;
     conf->on_recv = on_recv;
+
+    if (argc == 3) {
+        if (argv[1]) {
+            conf->addr = (char *)argv[1];
+        }
+        if (argv[2]) {
+            conf->port = atoi(argv[2]);
+        }
+    }
 
     skcp = skcp_init(conf, loop, NULL, SKCP_MODE_SERV);
     assert(skcp);

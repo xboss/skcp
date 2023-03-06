@@ -116,12 +116,8 @@ inline static void rand_iv(char *iv) {
 // #define SKCP_CMD_PONG 0x05
 // #define SKCP_CMD_CLOSE 0x06
 // #define SKCP_CMD_CLOSE_ACK 0x07
-// #define SKCP_CMD_CTRL 0x08
 
 #define SKCP_CMD_HEADER_LEN 9
-// #define SKCP_PROTOCOL_NAME 0xB
-// #define SKCP_PROTOCOL_VER_1 0x01
-// #define SKCP_CMD_CONN_NEED_AUTH 0x01
 
 typedef struct {
     uint32_t id;
@@ -265,6 +261,7 @@ static int del_conn_from_slots(skcp_conn_slots_t *slots, uint32_t cid) {
 /* -------------------------------------------------------------------------- */
 
 /* ------------------------------- definitions ------------------------------- */
+static char *def_iv = "9586cda28238ab24c8a484df6e355f90";
 
 /* ------------------------------- private api ------------------------------ */
 
@@ -338,7 +335,12 @@ inline static int udp_send(skcp_t *skcp, const char *buf, int len, struct sockad
 static int kcp_output(const char *buf, int len, struct IKCPCB *kcp, void *user) {
     skcp_conn_t *conn = (skcp_conn_t *)user;
 
-    return udp_send(conn->skcp, buf, len, conn->dest_addr);
+    int rt = udp_send(conn->skcp, buf, len, conn->dest_addr);
+    if (rt > 0) {
+        conn->last_w_tm = getmillisecond();
+    }
+
+    return rt;
 }
 
 static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
@@ -368,6 +370,10 @@ static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
         _FREEIF(conn->kcp_update_watcher);
     }
 
+    conn->status = SKCP_CONN_ST_OFF;
+    conn->id = 0;
+    conn->user_data = NULL;
+
     _FREEIF(conn);
 }
 
@@ -388,7 +394,8 @@ static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int 
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
     uint64_t now = getmillisecond();
     // TODO:
-    if (conn->status == SKCP_CONN_ST_ON && conn->last_r_tm - now > conn->skcp->conf->r_keepalive) {
+    if (now - conn->last_r_tm > conn->skcp->conf->r_keepalive * 1000) {
+        _LOG("timeout cid: %u", conn->id);
         skcp_close_conn(conn->skcp, conn->id);
         return;
     }
@@ -443,7 +450,7 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid) {
 
     // 设置超时定时循环
     conn->timeout_watcher = malloc(sizeof(ev_timer));
-    conn->timeout_watcher->data = skcp;
+    conn->timeout_watcher->data = conn;
     ev_init(conn->timeout_watcher, conn_timeout_cb);
     ev_timer_set(conn->timeout_watcher, skcp->conf->timeout_interval, skcp->conf->timeout_interval);
     ev_timer_start(skcp->loop, conn->timeout_watcher);
@@ -467,7 +474,8 @@ static int kcp_send_raw(skcp_conn_t *conn, const char *buf, int len) {
 
 static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in dest_addr) {
     const uint ack_len = 1 + 1 + SKCP_TICKET_LEN + 1 + SKCP_IV_LEN + 1;
-    char ack[ack_len] = {0};  // split by "\n", format:"code\ncid\niv"
+    // char ack[ack_len] = {0};
+    char *ack = (char *)_ALLOC(ack_len);  // split by "\n", format:"code\ncid\niv"
     int out_len = 0;
     char *buf = NULL;
     if (cmd->payload_len != SKCP_TICKET_LEN) {
@@ -475,7 +483,7 @@ static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in des
         goto send_req_cid_ack;
     }
 
-    int rt = skcp->conf->on_check_ticket(skcp, cmd->payload, cmd->payload_len);
+    int rt = skcp->conf->on_check_ticket(cmd->payload, cmd->payload_len);
     if (rt != 0) {
         // send result fail
         snprintf(ack, ack_len, "%d", 1);
@@ -500,7 +508,7 @@ static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in des
 
 send_req_cid_ack:
     buf = encode_cmd(0, SKCP_CMD_REQ_CID_ACK, ack, strlen(ack), &out_len);
-    // _FREEIF(ack);
+    _FREEIF(ack);
     rt = udp_send(skcp, buf, out_len, dest_addr);
     _FREEIF(buf);
     if (rt < 0) {
@@ -551,7 +559,7 @@ static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
     sprintf(tmp, "on_req_cid_ack_cmd cid: %d iv: %s", conn->id, conn->iv);
     _LOG("%s", tmp);
 
-    skcp->conf->on_recv(skcp, conn, NULL, 0, SKCP_MSG_TYPE_CID_ACK);
+    skcp->conf->on_recv(conn->id, NULL, 0, SKCP_MSG_TYPE_CID_ACK);
 }
 
 static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
@@ -574,8 +582,8 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     // TODO: 解密
     char *plain_buf = raw_buf;
     int plain_len = bytes;
-    // if (skcp->decrypt_cb) {
-    //     out_buf = skcp->decrypt_cb(skcp, raw_buf, bytes, &out_len);
+    // if (skcp->conf->key) {
+    //     aes_cbc_decrpyt(raw_buf,);
     //     FREE_IF(raw_buf);
     // }
 
@@ -626,6 +634,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     _FREEIF(plain_buf);
 
     char *kcp_recv_buf = (char *)_ALLOC(skcp->conf->kcp_buf_size);
+    // 返回-1表示数据还没有收满，-3表示接受buf大小<实际收到的数据大小
     int recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, skcp->conf->kcp_buf_size);
     ikcp_update(conn->kcp, clock());
     if (recv_len < 0) {
@@ -633,7 +642,8 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         return;
     }
 
-    skcp->conf->on_recv(skcp, conn, kcp_recv_buf, recv_len, SKCP_MSG_TYPE_DATA);
+    conn->last_r_tm = getmillisecond();
+    skcp->conf->on_recv(conn->id, kcp_recv_buf, recv_len, SKCP_MSG_TYPE_DATA);
     _FREEIF(kcp_recv_buf);
 }
 
@@ -680,12 +690,9 @@ void skcp_close_conn(skcp_t *skcp, uint32_t cid) {
     if (!conn) {
         return;
     }
-    skcp->conf->on_close(skcp, cid);
+    _LOG("skcp_close_conn cid: %u", cid);
+    skcp->conf->on_close(cid);
 
-    conn->status = SKCP_CONN_ST_OFF;
-    conn->id = 0;
-    conn->user_data = NULL;
-    conn->skcp = NULL;
     free_conn(skcp, conn);
 }
 

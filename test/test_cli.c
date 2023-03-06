@@ -18,23 +18,22 @@ static struct ev_timer *send_watcher = NULL;
 static uint32_t g_cid = 0;
 static skcp_t *skcp = NULL;
 
-static void on_recv(skcp_t *skcp, skcp_conn_t *conn, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
+static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
     _LOG("client on_recv msg_type: %d", msg_type);
     if (msg_type == SKCP_MSG_TYPE_CID_ACK) {
-        assert(conn);
-        _LOG("on_recv cid: %u", conn->id);
+        _LOG("on_recv cid: %u", cid);
         // g_conn = conn;
-        g_cid = conn->id;
+        g_cid = cid;
         return;
     }
 
-    char msg[1500] = {0};
+    char msg[5000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
     _LOG("client on_recv msg_type: %d len: %d  msg: %s", msg_type, buf_len, msg);
 }
-static void on_close(skcp_t *skcp, uint32_t cid) {
+static void on_close(uint32_t cid) {
     _LOG("server on_close cid: %u", cid);
     // g_conn = NULL;
     g_cid = 0;
@@ -51,7 +50,18 @@ static void send_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
 
     if (conn && conn->status == SKCP_CONN_ST_ON) {
         // connection alive
-        char msg[1500] = {0};
+        char msg[5000] = {0};
+        // int i = 0;
+        // for (; i < 1000; i++) {
+        //     msg[i] = 'a';
+        // }
+        // for (; i < 2000; i++) {
+        //     msg[i] = 'b';
+        // }
+        // for (; i < 2049; i++) {
+        //     msg[i] = 'c';
+        // }
+
         sprintf(msg, "hello %lu", clock());
         rt = skcp_send(skcp, g_cid, msg, strlen(msg));
         assert(rt >= 0);
@@ -82,6 +92,7 @@ int main(int argc, char const *argv[]) {
 #endif
 
     skcp_conf_t *conf = malloc(sizeof(skcp_conf_t));
+    memset(conf, 0, sizeof(skcp_conf_t));
     conf->interval = 10;
     conf->r_buf_size = conf->mtu = 1024;
     conf->rcvwnd = 128;
@@ -93,15 +104,25 @@ int main(int argc, char const *argv[]) {
     conf->w_keepalive = 15;  // 600;
     conf->estab_timeout = 100;
 
-    conf->addr = "127.0.0.1";  // argv[1];
+    conf->addr = "127.0.0.1";  //"45.63.84.222";    // argv[1];
     conf->port = 6060;         // atoi(argv[2]);
-    conf->key = "12345678123456781234567812345678";
-    conf->kcp_buf_size = 5000;  // 2048;
+    memcpy(conf->key, &"12345678123456781234567812345678", SKCP_KEY_LEN);
+    // conf->key = "12345678123456781234567812345678";
+    conf->kcp_buf_size = 2048;  // 2048;
     conf->timeout_interval = 1;
     conf->max_conn_cnt = 1024;
 
     conf->on_close = on_close;
     conf->on_recv = on_recv;
+
+    if (argc == 3) {
+        if (argv[1]) {
+            conf->addr = (char *)argv[1];
+        }
+        if (argv[2]) {
+            conf->port = atoi(argv[2]);
+        }
+    }
 
     skcp = skcp_init(conf, loop, NULL, SKCP_MODE_CLI);
     assert(skcp);
@@ -109,7 +130,7 @@ int main(int argc, char const *argv[]) {
     send_watcher = malloc(sizeof(ev_timer));
     send_watcher->data = skcp;
     ev_init(send_watcher, send_cb);
-    ev_timer_set(send_watcher, 1, 1);
+    ev_timer_set(send_watcher, 1, 2);
     ev_timer_start(skcp->loop, send_watcher);
 
     ev_run(loop, 0);
