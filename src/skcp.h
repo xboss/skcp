@@ -104,7 +104,6 @@ struct skcp_s {
     struct ev_io *r_watcher;
     struct ev_io *w_watcher;
     void *user_data;
-    // skcp_fsm *fsm;
 };
 
 skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP_MODE mode);

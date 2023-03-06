@@ -27,11 +27,11 @@ static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type
         return;
     }
 
-    char msg[5000] = {0};
+    char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
-    _LOG("client on_recv msg_type: %d len: %d  msg: %s", msg_type, buf_len, msg);
+    _LOG("client on_recv msg_type: %d cid: %u len: %d  msg: %s", msg_type, cid, buf_len, msg);
 }
 static void on_close(uint32_t cid) {
     _LOG("server on_close cid: %u", cid);
@@ -50,7 +50,7 @@ static void send_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
 
     if (conn && conn->status == SKCP_CONN_ST_ON) {
         // connection alive
-        char msg[5000] = {0};
+        char msg[10000] = {0};
         // int i = 0;
         // for (; i < 1000; i++) {
         //     msg[i] = 'a';
@@ -58,8 +58,17 @@ static void send_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
         // for (; i < 2000; i++) {
         //     msg[i] = 'b';
         // }
-        // for (; i < 2049; i++) {
-        //     msg[i] = 'c';
+        // for (; i < 3000; i++) {
+        //     msg[i] = 'd';
+        // }
+        // for (; i < 4000; i++) {
+        //     msg[i] = 'e';
+        // }
+        // for (; i < 5000; i++) {
+        //     msg[i] = 'f';
+        // }
+        // for (; i < 6000; i++) {
+        //     msg[i] = 'g';
         // }
 
         sprintf(msg, "hello %lu", clock());

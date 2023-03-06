@@ -68,40 +68,56 @@ inline static char *cipher_padding(const char *buf, int size, int *final_size) {
     return ret;
 }
 
-inline static void aes_cbc_encrpyt(const char *raw_buf, char **encrpy_buf, int len, char *key, char *iv) {
+inline static void aes_cbc_encrpyt(const char *raw_buf, char **encrpy_buf, int len, const char *key, const char *iv) {
     AES_KEY aes_key;
     unsigned char *skey = str2hex(key);
     unsigned char *siv = str2hex(iv);
     AES_set_encrypt_key(skey, 128, &aes_key);
     AES_cbc_encrypt((unsigned char *)raw_buf, (unsigned char *)*encrpy_buf, len, &aes_key, siv, AES_ENCRYPT);
-    free(skey);
-    free(siv);
+    _FREEIF(skey);
+    _FREEIF(siv);
 }
-inline static void aes_cbc_decrpyt(const char *raw_buf, char **encrpy_buf, int len, char *key, char *iv) {
+inline static void aes_cbc_decrypt(const char *raw_buf, char **encrpy_buf, int len, const char *key, const char *iv) {
     AES_KEY aes_key;
     unsigned char *skey = str2hex(key);
     unsigned char *siv = str2hex(iv);
     AES_set_decrypt_key(skey, 128, &aes_key);
     AES_cbc_encrypt((unsigned char *)raw_buf, (unsigned char *)*encrpy_buf, len, &aes_key, siv, AES_DECRYPT);
-    free(skey);
-    free(siv);
+    _FREEIF(skey);
+    _FREEIF(siv);
+}
+inline static char *aes_encrypt(const char *key, const char *iv, const char *in, int in_len, int *out_len) {
+    int padding_size = in_len;
+    char *after_padding_buf = (char *)in;
+    if (in_len % 16 != 0) {
+        after_padding_buf = cipher_padding(in, in_len, &padding_size);
+    }
+    *out_len = padding_size;
+
+    char *out_buf = malloc(padding_size);
+    memset(out_buf, 0, padding_size);
+    aes_cbc_encrpyt(after_padding_buf, &out_buf, padding_size, key, iv);
+    if (in_len % 16 != 0) {
+        _FREEIF(after_padding_buf);
+    }
+    return out_buf;
 }
 
-// TODO: 可优化，有可能生成一样的iv
-inline static void rand_iv(char *iv) {
-    if (!iv) {
-        return;
+static char *aes_decrypt(const char *key, const char *iv, const char *in, int in_len, int *out_len) {
+    int padding_size = in_len;
+    char *after_padding_buf = (char *)in;
+    if (in_len % 16 != 0) {
+        after_padding_buf = cipher_padding(in, in_len, &padding_size);
     }
+    *out_len = padding_size;
 
-    char s[] = "0123456789abcdef";
-    srand((unsigned)time(NULL));
-    for (size_t i = 0; i < SKCP_IV_LEN; i++) {
-        int j = rand() % 16;
-        if (i == 0 && j == 0) {
-            j = rand() % 15 + 1;
-        }
-        iv[i] = s[j];
+    char *out_buf = malloc(padding_size);
+    memset(out_buf, 0, padding_size);
+    aes_cbc_decrypt(after_padding_buf, &out_buf, padding_size, key, iv);
+    if (in_len % 16 != 0) {
+        _FREEIF(after_padding_buf);
     }
+    return out_buf;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -265,6 +281,23 @@ static char *def_iv = "9586cda28238ab24c8a484df6e355f90";
 
 /* ------------------------------- private api ------------------------------ */
 
+// TODO: 可优化，有可能生成一样的iv
+inline static void rand_iv(char *iv) {
+    if (!iv) {
+        return;
+    }
+
+    char s[] = "0123456789abcdef";
+    srand((unsigned)time(NULL));
+    for (size_t i = 0; i < SKCP_IV_LEN; i++) {
+        int j = rand() % 16;
+        if (i == 0 && j == 0) {
+            j = rand() % 15 + 1;
+        }
+        iv[i] = s[j];
+    }
+}
+
 static int init_cli_network(skcp_t *skcp) {
     // 设置客户端
     // 创建socket对象
@@ -324,7 +357,13 @@ inline static int udp_send(skcp_t *skcp, const char *buf, int len, struct sockad
     }
 
     // TODO: 加密
-    int rt = sendto(skcp->fd, buf, len, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+    char *cipher_buf = NULL;
+    int cipher_buf_len = 0;
+    if (strlen(skcp->conf->key) > 0) {
+        cipher_buf = aes_encrypt(skcp->conf->key, def_iv, buf, len, &cipher_buf_len);
+    }
+
+    int rt = sendto(skcp->fd, cipher_buf, cipher_buf_len, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (rt < 0) {
         perror("udp send error");
     }
@@ -582,10 +621,10 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     // TODO: 解密
     char *plain_buf = raw_buf;
     int plain_len = bytes;
-    // if (skcp->conf->key) {
-    //     aes_cbc_decrpyt(raw_buf,);
-    //     FREE_IF(raw_buf);
-    // }
+    if (strlen(skcp->conf->key) > 0) {
+        plain_buf = aes_decrypt(skcp->conf->key, def_iv, raw_buf, bytes, &plain_len);
+        _FREEIF(raw_buf);
+    }
 
     uint32_t cid = ikcp_getconv(plain_buf);
     if (cid == 0) {
@@ -633,14 +672,42 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     ikcp_update(conn->kcp, clock());
     _FREEIF(plain_buf);
 
-    char *kcp_recv_buf = (char *)_ALLOC(skcp->conf->kcp_buf_size);
-    // 返回-1表示数据还没有收满，-3表示接受buf大小<实际收到的数据大小
-    int recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, skcp->conf->kcp_buf_size);
-    ikcp_update(conn->kcp, clock());
-    if (recv_len < 0) {
-        _FREEIF(kcp_recv_buf);
-        return;
+    int recv_len = 0;
+    char *kcp_recv_buf = NULL;
+    int kcp_recv_buf_len = 0;
+    for (size_t try_cnt = 0; try_cnt < 10; try_cnt++) {
+        kcp_recv_buf_len = skcp->conf->kcp_buf_size * (try_cnt + 1);
+        kcp_recv_buf = (char *)_ALLOC(kcp_recv_buf_len);
+        if (!kcp_recv_buf) {
+            perror("alloc kcp_recv_buf error");
+            return;
+        }
+
+        // 返回-1表示数据还没有收完数据，-3表示接受buf太小
+        recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, kcp_recv_buf_len);
+        ikcp_update(conn->kcp, clock());
+        if (recv_len == -1 || recv_len == -2) {
+            // EAGAIN
+            _FREEIF(kcp_recv_buf);
+            return;
+        }
+
+        if (recv_len == -3) {
+            _FREEIF(kcp_recv_buf);
+            continue;
+        }
+
+        break;  // 有数据
     }
+
+    // char *kcp_recv_buf = (char *)_ALLOC(skcp->conf->kcp_buf_size);
+    // // 返回-1表示数据还没有收满，-3表示接受buf大小<实际收到的数据大小
+    // int recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, skcp->conf->kcp_buf_size);
+    // ikcp_update(conn->kcp, clock());
+    // if (recv_len < 0) {
+    //     _FREEIF(kcp_recv_buf);
+    //     return;
+    // }
 
     conn->last_r_tm = getmillisecond();
     skcp->conf->on_recv(conn->id, kcp_recv_buf, recv_len, SKCP_MSG_TYPE_DATA);

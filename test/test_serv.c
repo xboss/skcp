@@ -16,11 +16,11 @@ static skcp_t *skcp = NULL;
 
 static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
 static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
-    char msg[5000] = {0};
+    char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
-    _LOG("server on_recv msg_type: %d len: %d  msg: %s", msg_type, buf_len, msg);
+    _LOG("server on_recv msg_type: %d cid: %u len: %d  msg: %s", msg_type, cid, buf_len, msg);
     int rt = skcp_send(skcp, cid, buf, buf_len);
     assert(rt >= 0);
 }
