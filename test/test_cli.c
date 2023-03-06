@@ -1,0 +1,122 @@
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "skcp.h"
+
+#define _LOG(fmt, args...)   \
+    do {                     \
+        printf(fmt, ##args); \
+        printf("\n");        \
+    } while (0)
+
+static struct ev_timer *send_watcher = NULL;
+// static skcp_conn_t *g_conn = NULL;
+static uint32_t g_cid = 0;
+static skcp_t *skcp = NULL;
+
+static void on_recv(skcp_t *skcp, skcp_conn_t *conn, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
+    _LOG("client on_recv msg_type: %d", msg_type);
+    if (msg_type == SKCP_MSG_TYPE_CID_ACK) {
+        assert(conn);
+        _LOG("on_recv cid: %u", conn->id);
+        // g_conn = conn;
+        g_cid = conn->id;
+        return;
+    }
+
+    char msg[1500] = {0};
+    if (buf_len > 0) {
+        memcpy(msg, buf, buf_len);
+    }
+    _LOG("client on_recv msg_type: %d len: %d  msg: %s", msg_type, buf_len, msg);
+}
+static void on_close(skcp_t *skcp, uint32_t cid) {
+    _LOG("server on_close cid: %u", cid);
+    // g_conn = NULL;
+    g_cid = 0;
+}
+
+static void send_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents) {
+    if (EV_ERROR & revents) {
+        _LOG("send_cb got invalid event");
+        return;
+    }
+    int rt;
+
+    skcp_conn_t *conn = skcp_get_conn(skcp, g_cid);
+
+    if (conn && conn->status == SKCP_CONN_ST_ON) {
+        // connection alive
+        char msg[1500] = {0};
+        sprintf(msg, "hello %lu", clock());
+        rt = skcp_send(skcp, g_cid, msg, strlen(msg));
+        assert(rt >= 0);
+
+        return;
+    }
+
+    skcp_t *skcp = (skcp_t *)watcher->data;
+
+    char ticket[] = "12345678901234567890123456789012";
+    rt = skcp_req_cid(skcp, ticket, strlen(ticket));
+    assert(rt > 0);
+    _LOG("send ticket");
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                    main                                    */
+/* -------------------------------------------------------------------------- */
+int main(int argc, char const *argv[]) {
+    _LOG("test start...");
+
+#if (defined(__linux__) || defined(__linux))
+    struct ev_loop *loop = ev_loop_new(EVBACKEND_EPOLL);
+#elif defined(__APPLE__)
+    struct ev_loop *loop = ev_loop_new(EVBACKEND_KQUEUE);
+#else
+    struct ev_loop *loop = ev_default_loop(0);
+#endif
+
+    skcp_conf_t *conf = malloc(sizeof(skcp_conf_t));
+    conf->interval = 10;
+    conf->r_buf_size = conf->mtu = 1024;
+    conf->rcvwnd = 128;
+    conf->sndwnd = 128;
+    conf->nodelay = 1;
+    conf->resend = 2;
+    conf->nc = 1;
+    conf->r_keepalive = 15;  // 600;
+    conf->w_keepalive = 15;  // 600;
+    conf->estab_timeout = 100;
+
+    conf->addr = "127.0.0.1";  // argv[1];
+    conf->port = 6060;         // atoi(argv[2]);
+    conf->key = "12345678123456781234567812345678";
+    conf->kcp_buf_size = 5000;  // 2048;
+    conf->timeout_interval = 1;
+    conf->max_conn_cnt = 1024;
+
+    conf->on_close = on_close;
+    conf->on_recv = on_recv;
+
+    skcp = skcp_init(conf, loop, NULL, SKCP_MODE_CLI);
+    assert(skcp);
+
+    send_watcher = malloc(sizeof(ev_timer));
+    send_watcher->data = skcp;
+    ev_init(send_watcher, send_cb);
+    ev_timer_set(send_watcher, 1, 1);
+    ev_timer_start(skcp->loop, send_watcher);
+
+    ev_run(loop, 0);
+
+    skcp_free(skcp);
+    free(conf);
+
+    _LOG("test end...");
+    return 0;
+}
