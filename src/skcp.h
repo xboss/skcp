@@ -60,18 +60,39 @@ typedef struct {
 
     char *addr;
     uint16_t port;
-    char key[SKCP_KEY_LEN + 1];
     int r_buf_size;
     int kcp_buf_size;
     int timeout_interval;  // 单位：秒
     uint32_t max_conn_cnt;
+    char key[SKCP_KEY_LEN + 1];
     char ticket[SKCP_TICKET_LEN + 1];
 
     void (*on_accept)(uint32_t cid);
-    void (*on_recv)(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type);
+    void (*on_recv)(uint32_t cid, char *buf, int len, SKCP_MSG_TYPE msg_type);
     void (*on_close)(uint32_t cid);
     int (*on_check_ticket)(char *ticket, int len);
 } skcp_conf_t;
+
+#define SKCP_DEF_CONF(vconf)                     \
+    do {                                         \
+        memset((vconf), 0, sizeof(skcp_conf_t)); \
+        (vconf)->interval = 10;                  \
+        (vconf)->mtu = 1400;                     \
+        (vconf)->rcvwnd = 128;                   \
+        (vconf)->sndwnd = 128;                   \
+        (vconf)->nodelay = 1;                    \
+        (vconf)->resend = 2;                     \
+        (vconf)->nc = 1;                         \
+        (vconf)->r_keepalive = 600;              \
+        (vconf)->w_keepalive = 600;              \
+        (vconf)->estab_timeout = 100;            \
+        (vconf)->addr = NULL;                    \
+        (vconf)->port = 1111;                    \
+        (vconf)->r_buf_size = 1500;              \
+        (vconf)->kcp_buf_size = 2048;            \
+        (vconf)->timeout_interval = 1;           \
+        (vconf)->max_conn_cnt = SKCP_MAX_CONNS;  \
+    } while (0)
 
 typedef struct {
     skcp_conn_t **conns;  // array: id->skcp_conn_t
