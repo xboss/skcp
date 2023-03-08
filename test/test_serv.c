@@ -15,12 +15,12 @@
 static skcp_t *skcp = NULL;
 
 static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
-static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
+static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
     char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
-    _LOG("server on_recv msg_type: %d cid: %u len: %d  msg: %s", msg_type, cid, buf_len, msg);
+    _LOG("server on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
     int rt = skcp_send(skcp, cid, buf, buf_len);
     assert(rt >= 0);
 }
@@ -65,7 +65,7 @@ int main(int argc, char const *argv[]) {
     conf->on_accept = on_accept;
     conf->on_check_ticket = on_check_ticket;
     conf->on_close = on_close;
-    conf->on_recv = on_recv;
+    conf->on_recv_data = on_recv_data;
 
     if (argc == 3) {
         if (argv[1]) {

@@ -14,24 +14,21 @@
     } while (0)
 
 static struct ev_timer *send_watcher = NULL;
-// static skcp_conn_t *g_conn = NULL;
 static uint32_t g_cid = 0;
 static skcp_t *skcp = NULL;
 
-static void on_recv(uint32_t cid, char *buf, int buf_len, SKCP_MSG_TYPE msg_type) {
-    _LOG("client on_recv msg_type: %d", msg_type);
-    if (msg_type == SKCP_MSG_TYPE_CID_ACK) {
-        _LOG("on_recv cid: %u", cid);
-        // g_conn = conn;
-        g_cid = cid;
-        return;
-    }
+static void on_recv_cid(uint32_t cid) {
+    _LOG("on_recv cid: %u", cid);
+    g_cid = cid;
+    return;
+}
 
+static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
     char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
-    _LOG("client on_recv msg_type: %d cid: %u len: %d  msg: %s", msg_type, cid, buf_len, msg);
+    _LOG("client on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
 }
 static void on_close(uint32_t cid) {
     _LOG("server on_close cid: %u", cid);
@@ -122,7 +119,8 @@ int main(int argc, char const *argv[]) {
     conf->max_conn_cnt = 1024;
 
     conf->on_close = on_close;
-    conf->on_recv = on_recv;
+    conf->on_recv_cid = on_recv_cid;
+    conf->on_recv_data = on_recv_data;
 
     if (argc == 3) {
         if (argv[1]) {
