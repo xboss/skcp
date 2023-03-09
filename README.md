@@ -30,6 +30,7 @@ void (*on_close)(uint32_t cid);
 ```
 编译测试代码：
 ```
-gcc  -Isrc src/*.c test/test_serv.c -o test_serv -g -lev -lssl -lcrypto
-gcc  -Isrc src/*.c test/test_cli.c -o test_serv -g -lev -lssl -lcrypto
+cd skcp
+mkdir build
+make
 ```
