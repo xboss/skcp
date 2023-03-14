@@ -11,7 +11,7 @@ SKCP is a library of encapsulation of [KCP](https://github.com/skywind3000/kcp),
 ## 环境
 运行环境：Linux，MacOS
 
-依赖库：[OpenSSL](https://github.com/openssl/openssl/blob/master/INSTALL.md#installing-openssl)，[libev](http://pod.tst.eu/http://cvs.schmorp.de/libev/ev.pod)
+依赖库：[OpenSSL](https://github.com/openssl/openssl/blob/master/INSTALL.md#installing-openssl)，[libev](https://github.com/enki/libev)
 
 ## 使用
 客户端代码中需要实现skcp_conf_t中的：
