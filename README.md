@@ -2,7 +2,7 @@
 SKCP is a library of encapsulation of [KCP](https://github.com/skywind3000/kcp), it has the function of connection management and encryption.
 
 ## 状态
-“又不是不能用”，在[SKCPTUN](https://github.com/xboss/skcptun)中被使用。
+“又不是不能用”，应用在[SKCPTUN](https://github.com/xboss/skcptun)
 
 ## 特性
 * 加密后的传输数据没有任何特征
