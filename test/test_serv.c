@@ -14,7 +14,7 @@
 
 static skcp_t *skcp = NULL;
 
-static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
+// static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
 static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
     char msg[10000] = {0};
     if (buf_len > 0) {
@@ -62,7 +62,7 @@ int main(int argc, char const *argv[]) {
     conf->timeout_interval = 1;
     conf->max_conn_cnt = 1024;
 
-    conf->on_accept = on_accept;
+    // conf->on_accept = on_accept;
     conf->on_check_ticket = on_check_ticket;
     conf->on_close = on_close;
     conf->on_recv_data = on_recv_data;

@@ -1,5 +1,5 @@
 # SKCP
-SKCP is encapsulation of [KCP](https://github.com/skywind3000/kcp), it has the function of connection management and encryption.
+SKCP is a library of encapsulation of [KCP](https://github.com/skywind3000/kcp), it has the function of connection management and encryption.
 
 ## 状态
 “又不是不能用”，在[SKCPTUN](https://github.com/xboss/skcptun)中被使用。
