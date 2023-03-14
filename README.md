@@ -23,7 +23,6 @@ void (*on_close)(uint32_t cid);
 
 服务端代码中需要实现skcp_conf_t中的：
 ```
-void (*on_accept)(uint32_t cid);
 int (*on_check_ticket)(char *ticket, int len);
 void (*on_recv_data)(uint32_t cid, char *buf, int len);
 void (*on_close)(uint32_t cid);
