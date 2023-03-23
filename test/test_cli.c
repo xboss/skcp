@@ -108,7 +108,6 @@ int main(int argc, char const *argv[]) {
     conf->nc = 1;
     conf->r_keepalive = 15;  // 600;
     conf->w_keepalive = 15;  // 600;
-    conf->estab_timeout = 100;
 
     conf->addr = "127.0.0.1";  //"45.63.84.222";    // argv[1];
     conf->port = 6060;         // atoi(argv[2]);
