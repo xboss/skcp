@@ -16,17 +16,17 @@ SKCP is a library of encapsulation of [KCP](https://github.com/skywind3000/kcp),
 ## 使用
 客户端代码中需要实现skcp_conf_t中的：
 ```
-void (*on_recv_cid)(uint32_t cid);
-void (*on_recv_data)(uint32_t cid, char *buf, int len);
-void (*on_close)(uint32_t cid);
+void (*on_recv_cid)(skcp_t *skcp, uint32_t cid);
+void (*on_recv_data)(skcp_t *skcp, uint32_t cid, char *buf, int len);
+void (*on_close)(skcp_t *skcp, uint32_t cid);
 ```
 
 服务端代码中需要实现skcp_conf_t中的：
 ```
-void (*on_accept)(uint32_t cid);
-int (*on_check_ticket)(char *ticket, int len);
-void (*on_recv_data)(uint32_t cid, char *buf, int len);
-void (*on_close)(uint32_t cid);
+void (*on_accept)(skcp_t *skcp, uint32_t cid);
+int (*on_check_ticket)(skcp_t *skcp, char *ticket, int len);
+void (*on_recv_data)(skcp_t *skcp, uint32_t cid, char *buf, int len);
+void (*on_close)(skcp_t *skcp, uint32_t cid);
 ```
 编译测试代码：
 ```

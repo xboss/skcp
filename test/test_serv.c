@@ -14,8 +14,8 @@
 
 static skcp_t *skcp = NULL;
 
-static void on_accept(uint32_t cid) { _LOG("server accept cid: %u", cid); }
-static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
+static void on_accept(skcp_t *skcp, uint32_t cid) { _LOG("server accept cid: %u", cid); }
+static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
     char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
@@ -24,8 +24,8 @@ static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
     int rt = skcp_send(skcp, cid, buf, buf_len);
     assert(rt >= 0);
 }
-static void on_close(uint32_t cid) { _LOG("server on_close cid: %u", cid); }
-static int on_check_ticket(char *ticket, int len) { return 0; }
+static void on_close(skcp_t *skcp, uint32_t cid) { _LOG("server on_close cid: %u", cid); }
+static int on_check_ticket(skcp_t *skcp, char *ticket, int len) { return 0; }
 
 /* -------------------------------------------------------------------------- */
 /*                                    main                                    */

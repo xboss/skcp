@@ -17,20 +17,20 @@ static struct ev_timer *send_watcher = NULL;
 static uint32_t g_cid = 0;
 static skcp_t *skcp = NULL;
 
-static void on_recv_cid(uint32_t cid) {
+static void on_recv_cid(skcp_t *skcp, uint32_t cid) {
     _LOG("on_recv cid: %u", cid);
     g_cid = cid;
     return;
 }
 
-static void on_recv_data(uint32_t cid, char *buf, int buf_len) {
+static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
     char msg[10000] = {0};
     if (buf_len > 0) {
         memcpy(msg, buf, buf_len);
     }
     _LOG("client on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
 }
-static void on_close(uint32_t cid) {
+static void on_close(skcp_t *skcp, uint32_t cid) {
     _LOG("server on_close cid: %u", cid);
     // g_conn = NULL;
     g_cid = 0;
