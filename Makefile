@@ -16,8 +16,8 @@ TEST_OBJ = $(patsubst test/%.c, %.o, $(TEST_SRC))
 all: $(OBJ) $(TEST_OBJ)
 	@echo $(SRC)
 	@echo $(OBJ)
-	$(CC) $(OBJ_OUT) $(OUTPUT_DIR)test_cli.o -o $(OUTPUT_DIR)test_cli $(LIB)
-	$(CC) $(OBJ_OUT) $(OUTPUT_DIR)test_serv.o -o $(OUTPUT_DIR)test_serv $(LIB)
+	$(CC) $(OBJ_OUT) $(OUTPUT_DIR)skcp_client.o -o $(OUTPUT_DIR)skcp_client $(LIB)
+	$(CC) $(OBJ_OUT) $(OUTPUT_DIR)skcp_server.o -o $(OUTPUT_DIR)skcp_server $(LIB)
 
 %.o: src/%.c
 	@echo $< $@
@@ -28,4 +28,4 @@ all: $(OBJ) $(TEST_OBJ)
 	$(CC) $(INCLUDE) $(CFLAGS) $< -o $(OUTPUT_DIR)$@
 
 clean:
-	RM $(OUTPUT_DIR)*
+	rm -rf $(OUTPUT_DIR)*

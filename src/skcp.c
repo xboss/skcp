@@ -305,7 +305,7 @@ static int init_cli_network(skcp_t *skcp) {
     skcp->fd = socket(AF_INET, SOCK_DGRAM, 0);
     // 设置为非阻塞
     if (-1 == fcntl(skcp->fd, F_SETFL, fcntl(skcp->fd, F_GETFL) | O_NONBLOCK)) {
-        _LOG("error fcntl");
+        // _LOG("error fcntl");
         close(skcp->fd);
         return -1;
     }
@@ -323,7 +323,7 @@ static int init_serv_network(skcp_t *skcp) {
     // 设置服务端
     skcp->fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (-1 == skcp->fd) {
-        _LOG("start kcp server socket error");
+        // _LOG("start kcp server socket error");
         return -1;
     }
     // 设置为非阻塞
@@ -342,7 +342,7 @@ static int init_serv_network(skcp_t *skcp) {
     servaddr.sin_port = htons(skcp->conf->port);
 
     if (-1 == bind(skcp->fd, (struct sockaddr *)&servaddr, sizeof(servaddr))) {
-        _LOG("bind error when start kcp server");
+        // _LOG("bind error when start kcp server");
         close(skcp->fd);
         return -1;
     }
@@ -392,7 +392,7 @@ static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
     if (skcp->conn_slots) {
         int rt = del_conn_from_slots(skcp->conn_slots, conn->id);
         if (rt != 0) {
-            _LOG("del_conn_from_slots error cid: %u", conn->id);
+            // _LOG("del_conn_from_slots error cid: %u", conn->id);
         }
     }
 
@@ -420,7 +420,7 @@ static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
 
 static void kcp_update_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
     if (EV_ERROR & revents) {
-        _LOG("kcp update got invalid event");
+        // _LOG("kcp update got invalid event");
         return;
     }
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
@@ -429,12 +429,11 @@ static void kcp_update_cb(struct ev_loop *loop, ev_timer *watcher, int revents) 
 
 static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents) {
     if (EV_ERROR & revents) {
-        _LOG("timeout_cb got invalid event");
+        // _LOG("timeout_cb got invalid event");
         return;
     }
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
     uint64_t now = getmillisecond();
-    // TODO:
     if (now - conn->last_r_tm > conn->skcp->conf->r_keepalive * 1000) {
         // _LOG("timeout cid: %u", conn->id);
         skcp_close_conn(conn->skcp, conn->id);
@@ -593,7 +592,7 @@ static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
         return;
     }
     memcpy(conn->iv, p + 1, cmd->payload_len - i - 2);
-    conn->status = SKCP_CONN_ST_ON;
+    // conn->status = SKCP_CONN_ST_ON;
     // TODO: set ticket, to the user to resolve
 
     // _LOG("on_req_cid_ack_cmd cid: %d iv: %s", conn->id, conn->iv);
@@ -603,7 +602,7 @@ static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
 
 static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     if (EV_ERROR & revents) {
-        _LOG("read_cb got invalid event");
+        // _LOG("read_cb got invalid event");
         return;
     }
     skcp_t *skcp = (skcp_t *)(watcher->data);
@@ -636,7 +635,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         skcp_cmd_t *cmd = decode_cmd(plain_buf, plain_len);
         _FREEIF(plain_buf);
         if (!cmd) {
-            _LOG("decode_cmd error");
+            // _LOG("decode_cmd error");
             return;
         }
         if (cmd->type == SKCP_CMD_REQ_CID && skcp->mode == SKCP_MODE_SERV) {
