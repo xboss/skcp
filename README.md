@@ -35,14 +35,18 @@ mkdir build
 make
 ```
 
+## 测试
 运行测试服务端：
 ```
 cd build
 ./skcp_server
 ```
 目前测试服务端命令只能服务一个客户端，即点对点的服务，如果需要多个，需要起多个skcp_server进程，如同“netcat”。
+
 通过“-h”参数获取帮助。
+
 默认监听127.0.0.1地址的6060端口。
+
 可以通过参数指定监听的网络接口和端口以及加密的key：
 ```
 ./skcp_server -a 0.0.0.0 -p 8080 -k yourpassword
@@ -54,7 +58,9 @@ cd build
 ./skcp_client
 ```
 通过“-h”参数获取帮助。
+
 默认连接127.0.0.1地址的6060端口。
+
 可以通过参数指定需要连接的网络接口和端口以及加密的key：
 ```
 ./skcp_client -a 0.0.0.0 -p 8080 -k yourpassword
