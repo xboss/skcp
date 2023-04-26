@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,24 +99,45 @@ static void beat_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
     }
 }
 
+#define SKCP_CLI_USAGE \
+    fprintf(stderr,    \
+            "Usage: skcp_client [-a address] [-p port] [-k password]\n\
+    -a<address> connection address\n\
+    -p<port> connection port\n\
+    -k<password> password agreed with the server\n\
+    -h help info\n")
+
+inline static void parse_pwd(skcp_conf_t *conf) {
+    char padding[16] = {0};
+    int len = strlen(optarg);
+    len = len > 16 ? 16 : len;
+    memcpy(padding, optarg, len);
+    char_to_hex(padding, len, conf->key);
+}
+
 inline static int parse_args(skcp_conf_t *conf, int argc, char const *argv[]) {
-    if (argc >= 2 && argv[1]) {
-        conf->addr = (char *)argv[1];
+    char opt;
+    while ((opt = getopt(argc, (char *const *)argv, "ha:p:k:")) != -1) {
+        switch (opt) {
+            case 'a':
+                conf->addr = optarg;
+                break;
+            case 'p':
+                conf->port = atoi(optarg);
+                if (conf->port <= 0) {
+                    fprintf(stderr, "invalid port %s\n", optarg);
+                    return 1;
+                }
+                break;
+            case 'k':
+                parse_pwd(conf);
+                break;
+            case 'h':
+            default:
+                SKCP_CLI_USAGE;
+                return 1;
+        }
     }
-
-    if (argc >= 3 && argv[2]) {
-        conf->port = atoi(argv[2]);
-    }
-
-    if (argc >= 4 && argv[3]) {
-        // key
-        char padding[16] = {0};
-        int len = strlen(argv[3]);
-        len = len > 16 ? 16 : len;
-        memcpy(padding, argv[3], len);
-        char_to_hex(padding, len, conf->key);
-    }
-
     return 0;
 }
 
@@ -157,7 +179,10 @@ int main(int argc, char const *argv[]) {
     conf->on_recv_cid = on_recv_cid;
     conf->on_recv_data = on_recv_data;
 
-    parse_args(conf, argc, argv);
+    if (parse_args(conf, argc, argv) != 0) {
+        return 1;
+    }
+
     fprintf(stderr, "client connect %s %u\n", conf->addr, conf->port);
 
     skcp = skcp_init(conf, loop, NULL, SKCP_MODE_CLI);

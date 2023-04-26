@@ -94,24 +94,45 @@ static void idle_cb(struct ev_loop *loop, struct ev_idle *watcher, int revents) 
     ev_io_start(loop, stdin_watcher);
 }
 
+#define SKCP_SERV_USAGE \
+    fprintf(stderr,     \
+            "Usage: skcp_server [-a address] [-p port] [-k password]\n\
+    -a<address> listening address\n\
+    -p<port> listening port\n\
+    -k<password> password agreed with the client\n\
+    -h help info\n")
+
+inline static void parse_pwd(skcp_conf_t *conf) {
+    char padding[16] = {0};
+    int len = strlen(optarg);
+    len = len > 16 ? 16 : len;
+    memcpy(padding, optarg, len);
+    char_to_hex(padding, len, conf->key);
+}
+
 inline static int parse_args(skcp_conf_t *conf, int argc, char const *argv[]) {
-    if (argc >= 2 && argv[1]) {
-        conf->addr = (char *)argv[1];
+    char opt;
+    while ((opt = getopt(argc, (char *const *)argv, "ha:p:k:")) != -1) {
+        switch (opt) {
+            case 'a':
+                conf->addr = optarg;
+                break;
+            case 'p':
+                conf->port = atoi(optarg);
+                if (conf->port <= 0) {
+                    fprintf(stderr, "invalid port %s\n", optarg);
+                    return 1;
+                }
+                break;
+            case 'k':
+                parse_pwd(conf);
+                break;
+            case 'h':
+            default:
+                SKCP_SERV_USAGE;
+                return 1;
+        }
     }
-
-    if (argc >= 3 && argv[2]) {
-        conf->port = atoi(argv[2]);
-    }
-
-    if (argc >= 4 && argv[3]) {
-        // key
-        char padding[16] = {0};
-        int len = strlen(argv[3]);
-        len = len > 16 ? 16 : len;
-        memcpy(padding, argv[3], len);
-        char_to_hex(padding, len, conf->key);
-    }
-
     return 0;
 }
 
@@ -153,7 +174,9 @@ int main(int argc, char const *argv[]) {
     conf->on_close = on_close;
     conf->on_recv_data = on_recv_data;
 
-    parse_args(conf, argc, argv);
+    if (parse_args(conf, argc, argv) != 0) {
+        return 1;
+    }
     // _LOG("server start, listening on %s %u", conf->addr, conf->port);
     fprintf(stderr, "server start, listening on %s %u\n", conf->addr, conf->port);
 
