@@ -329,6 +329,8 @@ static int init_serv_network(skcp_t *skcp) {
     // 设置为非阻塞
     if (-1 == fcntl(skcp->fd, F_SETFL, fcntl(skcp->fd, F_GETFL) | O_NONBLOCK)) {
         perror("setnonblock error");
+        close(skcp->fd);
+        return -1;
     }
 
     struct sockaddr_in servaddr;
