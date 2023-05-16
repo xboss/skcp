@@ -437,7 +437,7 @@ static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int 
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
     uint64_t now = getmillisecond();
     if (now - conn->last_r_tm > conn->skcp->conf->r_keepalive * 1000) {
-        // _LOG("timeout cid: %u", conn->id);
+        _LOG("timeout cid: %u", conn->id);
         skcp_close_conn(conn->skcp, conn->id);
         return;
     }
