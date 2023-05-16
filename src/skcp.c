@@ -441,6 +441,8 @@ static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int 
         skcp_close_conn(conn->skcp, conn->id);
         return;
     }
+    int wait_snd = ikcp_waitsnd(conn->kcp);
+    _LOG("wait_snd: %d", wait_snd);  // TODO: for test
     // if (conn->status == SKCP_CONN_ST_READY && conn->estab_tm - now > conn->skcp->conf->estab_timeout) {
     //     skcp_close_conn(conn->skcp, conn->id);
     //     return;
@@ -480,6 +482,9 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid) {
     ikcp_wndsize(kcp, conf->sndwnd, conf->rcvwnd);
     ikcp_nodelay(kcp, conf->nodelay, conf->interval, conf->nodelay, conf->nc);
     ikcp_setmtu(kcp, conf->mtu);
+
+    kcp->rx_minrto = 10;  // TODO: for test
+
     conn->kcp = kcp;
 
     // 设置kcp定时循环
@@ -511,6 +516,7 @@ static int kcp_send_raw(skcp_conn_t *conn, const char *buf, int len) {
         return -1;
     }
     ikcp_update(conn->kcp, clock());
+    ikcp_flush(conn->kcp);  // TODO: for test
     return rt;
 }
 

@@ -76,10 +76,10 @@ typedef struct skcp_conf_s {
 #define SKCP_DEF_CONF(vconf)                     \
     do {                                         \
         memset((vconf), 0, sizeof(skcp_conf_t)); \
-        (vconf)->interval = 10;                  \
-        (vconf)->mtu = 1400;                     \
-        (vconf)->rcvwnd = 256;                   \
-        (vconf)->sndwnd = 256;                   \
+        (vconf)->interval = 5;                   \
+        (vconf)->mtu = 512;                      \
+        (vconf)->rcvwnd = 1024;                  \
+        (vconf)->sndwnd = 1024;                  \
         (vconf)->nodelay = 1;                    \
         (vconf)->resend = 2;                     \
         (vconf)->nc = 1;                         \
