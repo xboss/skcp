@@ -296,7 +296,7 @@ static void async_cb(struct ev_loop *loop, ev_async *watcher, int revents) {
         skcp_msg_t *msg = (skcp_msg_t *)skcp_pop_queue(smt->in_box);
         if (msg->type == SKCP_MSG_T_SEND) {
             if (skcp_send(msg->smt->skcp, msg->cid, msg->buf, msg->buf_len) < 0) {
-                _LOG("async_cb skcp_send error");
+                _LOG("async_cb skcp_send error cid: %u", msg->cid);
                 // TODO: 按顺序放回队列
             }
         } else if (msg->type == SKCP_MSG_T_CLOSE_CONN) {
