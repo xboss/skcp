@@ -37,6 +37,8 @@ inline static uint64_t getmillisecond() {
     return millisecond;
 }
 
+inline static uint32_t getms() { return (uint32_t)(getmillisecond() & 0xfffffffful); }
+
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
 /* -------------------------------------------------------------------------- */
@@ -378,6 +380,10 @@ inline static int udp_send(skcp_t *skcp, const char *buf, int len, struct sockad
 static int kcp_output(const char *buf, int len, struct IKCPCB *kcp, void *user) {
     skcp_conn_t *conn = (skcp_conn_t *)user;
 
+    // if (conn->skcp->mode == SKCP_MODE_SERV && ikcp_waitsnd(kcp) > 200) {  // TODO: for test
+    //     _LOG("kcp_output cid: %u", kcp->conv);
+    // }
+
     int rt = udp_send(conn->skcp, buf, len, conn->dest_addr);
     if (rt > 0) {
         conn->last_w_tm = getmillisecond();
@@ -426,7 +432,7 @@ static void kcp_update_cb(struct ev_loop *loop, ev_timer *watcher, int revents) 
         return;
     }
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
-    ikcp_update(conn->kcp, clock());
+    ikcp_update(conn->kcp, getms());  // clock()
 }
 
 static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents) {
@@ -441,8 +447,9 @@ static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int 
         skcp_close_conn(conn->skcp, conn->id);
         return;
     }
-    int wait_snd = ikcp_waitsnd(conn->kcp);
-    _LOG("wait_snd: %d", wait_snd);  // TODO: for test
+    // int wait_snd = ikcp_waitsnd(conn->kcp);
+    // _LOG("wait_snd: %d", wait_snd);  // TODO: for test
+
     // if (conn->status == SKCP_CONN_ST_READY && conn->estab_tm - now > conn->skcp->conf->estab_timeout) {
     //     skcp_close_conn(conn->skcp, conn->id);
     //     return;
@@ -515,7 +522,7 @@ static int kcp_send_raw(skcp_conn_t *conn, const char *buf, int len) {
         // 发送失败
         return -1;
     }
-    ikcp_update(conn->kcp, clock());
+    ikcp_update(conn->kcp, getms());
     ikcp_flush(conn->kcp);  // TODO: for test
     return rt;
 }
@@ -676,7 +683,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     }
 
     ikcp_input(conn->kcp, plain_buf, plain_len);
-    ikcp_update(conn->kcp, clock());
+    ikcp_update(conn->kcp, getms());
     _FREEIF(plain_buf);
 
     int recv_len = 0;
@@ -692,7 +699,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
         // 返回-1表示数据还没有收完数据，-3表示接受buf太小
         recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, kcp_recv_buf_len);
-        ikcp_update(conn->kcp, clock());
+        ikcp_update(conn->kcp, getms());
         if (recv_len == -1 || recv_len == -2) {
             // EAGAIN
             _FREEIF(kcp_recv_buf);
@@ -710,7 +717,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     // char *kcp_recv_buf = (char *)_ALLOC(skcp->conf->kcp_buf_size);
     // // 返回-1表示数据还没有收满，-3表示接受buf大小<实际收到的数据大小
     // int recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, skcp->conf->kcp_buf_size);
-    // ikcp_update(conn->kcp, clock());
+    // ikcp_update(conn->kcp, getms());
     // if (recv_len < 0) {
     //     _FREEIF(kcp_recv_buf);
     //     return;
