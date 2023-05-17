@@ -74,6 +74,7 @@ typedef struct {
     skcp_queue_t *out_box;
     ev_async *async_watcher;
     // skcp_queue_t *mq;
+    int wait_snd;  // for stat
 
     void (*notify_fn)();
 

@@ -77,7 +77,7 @@ typedef struct skcp_conf_s {
     do {                                         \
         memset((vconf), 0, sizeof(skcp_conf_t)); \
         (vconf)->interval = 5;                   \
-        (vconf)->mtu = 1400;                     \
+        (vconf)->mtu = 1200;                     \
         (vconf)->rcvwnd = 1024;                  \
         (vconf)->sndwnd = 1024;                  \
         (vconf)->nodelay = 1;                    \

@@ -403,17 +403,17 @@ int skcp_mt_send(skcp_mt_t *smt, uint32_t cid, const char *buf, int len) {
     msg->buf_len = len;
     if (skcp_push_queue(smt->in_box, msg) == 0) {
         skcp_conn_t *conn = skcp_get_conn(smt->skcp, cid);
-        int wait_snd = 0;
         if (conn) {
-            wait_snd = ikcp_waitsnd(conn->kcp);
+            smt->wait_snd = ikcp_waitsnd(conn->kcp);
             // if (wait_snd < conn->kcp->snd_wnd) {
-            if (wait_snd < 200) {
+            if (smt->wait_snd < 200) {
                 ev_async_send(smt->loop, smt->async_watcher);
-            } else {
-                if (wait_snd % 10 == 1) {  // TODO: for test
-                    _LOG("stop send notify wait_snd: %d", wait_snd);
-                }
             }
+            // else {
+            //     if (wait_snd % 10 == 1) {  // TODO: for test
+            //         _LOG("stop send notify wait_snd: %d", wait_snd);
+            //     }
+            // }
         }
     }
     return len;
