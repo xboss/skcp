@@ -48,6 +48,7 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
         skcp_msg_t *msg = NULL;
         SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_TIMEOUT, conn->id, NULL, 0, conn->skcp);
         conn->engine->handler(msg);
+        SKCP_FREE_MSG(msg);
         skcp_free_conn(conn->conn_slots, conn->id);
     }
 }
@@ -86,6 +87,7 @@ static int on_msg_input(skcp_engine_t *engine, skcp_msg_t *msg) {
     SKCP_INIT_ENGINE_MSG(recv_msg, SKCP_MSG_TYPE_RECV, msg->cid, kcp_recv_buf, recv_len, engine->user_data);
     SKCP_FREEIF(kcp_recv_buf);
     engine->handler(recv_msg);
+    SKCP_FREE_MSG(recv_msg);
     conn->last_r_tm = skcp_getmillisecond();
 
     return SKCP_OK;

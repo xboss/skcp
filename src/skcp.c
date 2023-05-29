@@ -190,10 +190,15 @@ static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
 
 static void engine_msg_handler(skcp_msg_t *eg_msg) {
     skcp_t *skcp = (skcp_t *)eg_msg->user_data;
-    // skcp_msg_t *msg = NULL;
-    // SKCP_INIT_MSG(msg, SKCP_MSG_TYPE_RECV, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, skcp);
-    // SKCP_FREE_MSG(eg_msg);
-    if (skcp_push_queue(skcp->in_mq, eg_msg) != 0) {
+    skcp_msg_t *msg = NULL;
+    if (eg_msg->type == SKCP_MSG_TYPE_RECV) {
+        SKCP_INIT_MSG(msg, SKCP_MSG_TYPE_RECV, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, skcp);
+    } else if (SKCP_MSG_TYPE_CLOSE_TIMEOUT == eg_msg->type || SKCP_MSG_TYPE_CLOSE_MANUAL == eg_msg->type) {
+        SKCP_INIT_MSG(msg, eg_msg->type, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, skcp);
+    } else {
+        SKCP_LOG("engine_msg_handler error msg type %x", eg_msg->type);
+    }
+    if (skcp_push_queue(skcp->in_mq, msg) != 0) {
         SKCP_LOG("recv_msg_handler push in_mq error");
     }
     ev_async_send(skcp->loop, skcp->notify_input_watcher);
