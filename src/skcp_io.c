@@ -222,7 +222,6 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         SKCP_FREEIF(raw_buf);
     }
 
-    // TODO: create cid
     uint32_t cid = 0;
     skcp_decode32u((const char *)plain_buf, &cid);
     if (cid == 0) {
@@ -273,8 +272,6 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 static void *routine_fn(void *arg) {
     // SKCP_LOG("io thread %lld", pthread_self());
     skcp_io_t *io = (skcp_io_t *)arg;
-    // char *test = SKCP_ALLOC(10);  // TODO: for test
-    // test[0] = 'A';
     ev_run(io->loop, 0);
     return NULL;
 }
