@@ -7,10 +7,10 @@
 
 #include "skcp.h"
 
-#define _LOG(fmt, args...)   \
-    do {                     \
-        printf(fmt, ##args); \
-        printf("\n");        \
+#define SKCP_LOG(fmt, args...) \
+    do {                       \
+        printf(fmt, ##args);   \
+        printf("\n");          \
     } while (0)
 
 static skcp_t *skcp = NULL;
@@ -27,11 +27,12 @@ inline static void char_to_hex(char *src, int len, char *des) {
     }
 }
 
-static void on_accept(skcp_t *skcp, uint32_t cid) {
-    // _LOG("server accept cid: %u", cid);
+static void on_created_conn(skcp_t *skcp, uint32_t cid) {
+    SKCP_LOG("server accept cid: %u", cid);
     g_cid = cid;
 }
-static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
+static void on_recv(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
+    SKCP_LOG("server on_recv cid: %u len: %d", cid, buf_len);
     if (!buf || buf_len < 1) {
         fprintf(stderr, "on_recv_data buf error\n");
         return;
@@ -41,12 +42,10 @@ static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
         return;
     }
 
-    // _LOG("server on_recv cid: %u len: %d", cid, buf_len);
-
     if (buf[0] == 'D') {
         // cmd data
         char *pb = buf + 1;
-        fprintf(stdout, "%s", pb);
+        fprintf(stdout, ">>>>>>>>>%s", pb);
         fflush(stdout);
         return;
     }
@@ -60,13 +59,16 @@ static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
         return;
     }
 }
-static void on_close(skcp_t *skcp, uint32_t cid) {
-    // _LOG("server on_close cid: %u", cid);
+static void on_close(skcp_t *skcp, uint32_t cid, u_char type) {
+    SKCP_LOG("server on_close cid: %u", cid);
     if (cid == g_cid) {
         g_cid = 0;
     }
 }
-static int on_check_ticket(skcp_t *skcp, char *ticket, int len) { return 0; }
+static int on_auth(skcp_t *skcp, char *ticket, int len) {
+    SKCP_LOG("server on_auth");
+    return 0;
+}
 
 static void stdin_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     ev_io_stop(loop, watcher);
@@ -74,7 +76,7 @@ static void stdin_read_cb(struct ev_loop *loop, struct ev_io *watcher, int reven
 }
 
 static void idle_cb(struct ev_loop *loop, struct ev_idle *watcher, int revents) {
-    skcp_conn_t *conn = skcp_get_conn(skcp, g_cid);
+    skcp_conn_t *conn = skcp_get_conn(skcp->conn_slots, g_cid);
     if (conn && conn->status == SKCP_CONN_ST_ON) {
         // connection alive
         char inbuf[1600] = {0};
@@ -83,7 +85,7 @@ static void idle_cb(struct ev_loop *loop, struct ev_idle *watcher, int revents) 
         fread(pb, sizeof(inbuf) - 2, 1, stdin);
         size_t inbuf_len = strlen(inbuf);
         if (inbuf_len > 1) {
-            // _LOG("%s len:%lu", inbuf, inbuf_len);
+            // SKCP_LOG("%s len:%lu", inbuf, inbuf_len);
             int rt = skcp_send(skcp, g_cid, inbuf, inbuf_len);
             assert(rt >= 0);
         }
@@ -140,7 +142,7 @@ inline static int parse_args(skcp_conf_t *conf, int argc, char const *argv[]) {
 /*                                    main                                    */
 /* -------------------------------------------------------------------------- */
 int main(int argc, char const *argv[]) {
-    // _LOG("test start...");
+    // SKCP_LOG("test start...");
 
 #if (defined(__linux__) || defined(__linux))
     loop = ev_loop_new(EVBACKEND_EPOLL);
@@ -161,26 +163,26 @@ int main(int argc, char const *argv[]) {
     conf->nc = 1;
     conf->r_keepalive = 15;
     conf->w_keepalive = 15;
+    conf->mode = SKCP_IO_MODE_SERVER;
 
     conf->addr = "127.0.0.1";
     conf->port = 6060;
+    conf->key = SKCP_ALLOC(SKCP_KEY_LEN + 1);
     memcpy(conf->key, &"12345678123456781234567812345678", SKCP_KEY_LEN);
     conf->kcp_buf_size = 2048;
     conf->timeout_interval = 1;
     conf->max_conn_cnt = 1024;
 
-    conf->on_accept = on_accept;
-    conf->on_check_ticket = on_check_ticket;
-    conf->on_close = on_close;
-    conf->on_recv_data = on_recv_data;
+    conf->io_cnt = 1;
+    conf->engine_cnt = 1;
 
     if (parse_args(conf, argc, argv) != 0) {
         return 1;
     }
-    // _LOG("server start, listening on %s %u", conf->addr, conf->port);
+    // SKCP_LOG("server start, listening on %s %u", conf->addr, conf->port);
     fprintf(stderr, "server start, listening on %s %u\n", conf->addr, conf->port);
 
-    skcp = skcp_init(conf, loop, NULL, SKCP_MODE_SERV);
+    skcp = skcp_init(conf, loop, on_created_conn, on_recv, on_close, on_auth, NULL);
     assert(skcp);
 
     if (-1 == fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) | O_NONBLOCK)) {
@@ -199,6 +201,6 @@ int main(int argc, char const *argv[]) {
     skcp_free(skcp);
     free(conf);
 
-    // _LOG("test end...");
+    // SKCP_LOG("test end...");
     return 0;
 }

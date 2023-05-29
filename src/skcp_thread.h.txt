@@ -1,0 +1,26 @@
+// #ifndef _SKCP_THREAD_H
+// #define _SKCP_THREAD_H
+
+// #include <pthread.h>
+
+// #include "skcp_common.h"
+// #include "skcp_queue.h"
+
+// #define SKCP_THREAD_MSG_T_UDP_RECV 1
+
+// typedef struct {
+//     int tid;
+//     int type;
+//     char *data;
+//     size_t data_len;
+// } skcp_thread_msg_t;
+
+// int skcp_thread_init(void *(*run_fn)(void *args), void *ud);
+// void skcp_thread_free(int tid);
+// int skcp_thread_send(skcp_thread_msg_t *msg);
+// skcp_thread_msg_t *skcp_thread_recv(int tid);
+// skcp_thread_msg_t *skcp_thread_recv_block(int tid);
+// skcp_thread_msg_t *skcp_thread_init_msg(int tid, int type, char *data, size_t data_len);
+// // int skcp_thread_shutdown(skcp_thread_t *td, int tid);
+
+// #endif  // SKCP_THREAD_H

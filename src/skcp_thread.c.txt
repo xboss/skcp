@@ -1,0 +1,143 @@
+// #include "skcp_thread.h"
+
+// #include <stddef.h>
+
+// #define SKCP_THREAD_MAX_CNT 1024
+
+// typedef struct {
+//     int tid;
+//     pthread_t sys_tid;
+//     skcp_queue_t *in_mq;
+//     // void *(*run)(void *args);
+//     // void (*start_fn)(void *ud);
+//     // void (*process_fn)(skcp_thread_msg_t *msg, void *ud);
+//     // void (*end_fn)(void *ud);
+//     int shutdown;  // 1: shutdown; 0: not shutdown;
+//     void *ud;
+// } skcp_thread_t;
+
+// typedef struct {
+//     skcp_thread_t **threads;
+//     int cnt;
+// } skcp_thread_man_t;
+
+// static skcp_thread_man_t *g_thread_man = NULL;
+
+// static void free_in_mq_item(void *data) {
+//     skcp_thread_msg_t *msg = (skcp_thread_msg_t *)data;
+//     if (msg) {
+//         if (msg->data) {
+//             SKCP_FREEIF(msg->data);
+//         }
+//         SKCP_FREEIF(msg);
+//     }
+// }
+
+// // static void *worker(void *args) {
+// //     skcp_thread_t *thread = (skcp_thread_t *)args;
+// //     if (thread->start_fn) {
+// //         thread->start_fn(thread->ud);
+// //     }
+
+// //     while (!thread->shutdown) {
+// //         skcp_thread_msg_t *msg = (skcp_thread_msg_t *)skcp_pop_block_queue(thread->in_mq);
+// //         if (msg && thread->process_fn) {
+// //             thread->process_fn(msg, thread->ud);
+// //         }
+// //         free_task(msg);
+// //     }
+
+// //     return NULL;
+// // }
+
+// int skcp_thread_init(void *(*routine_fn)(void *args), void *ud) {
+//     if (g_thread_man == NULL) {
+//         g_thread_man = (skcp_thread_man_t *)SKCP_ALLOC(sizeof(skcp_thread_man_t));
+//         g_thread_man->threads = (skcp_thread_t **)SKCP_ALLOC(sizeof(skcp_thread_t *) * SKCP_THREAD_MAX_CNT);
+//     }
+//     if (g_thread_man->cnt >= SKCP_THREAD_MAX_CNT) {
+//         return SKCP_ERR;
+//     }
+
+//     int emp_idx = 0;
+//     for (int i = 0; i < SKCP_THREAD_MAX_CNT; i++) {
+//         if (g_thread_man->threads[i] == NULL) {
+//             emp_idx = i;
+//         }
+//     }
+
+//     skcp_thread_t *thread = (skcp_thread_t *)SKCP_ALLOC(sizeof(skcp_thread_t));
+//     thread->tid = emp_idx + 1;
+//     // thread->run = run;
+//     // thread->start_fn = start_fn;
+//     // thread->process_fn = process_fn;
+//     // thread->end_fn = end_fn;
+//     thread->ud = ud;
+//     thread->in_mq = skcp_init_queue(-1);
+//     if (!thread->in_mq) {
+//         skcp_thread_free(emp_idx);
+//         return SKCP_ERR;
+//     }
+
+//     if (pthread_create(&thread->sys_tid, NULL, routine_fn, thread)) {
+//         skcp_thread_free(emp_idx);
+//         return SKCP_ERR;
+//     }
+//     thread->shutdown = 0;
+//     g_thread_man->threads[emp_idx] = thread;
+//     g_thread_man->cnt++;
+
+//     return thread->tid;
+// }
+
+// void skcp_thread_free(int tid) {
+//     if (tid <= 0 || !g_thread_man) {
+//         return;
+//     }
+//     int idx = tid - 1;
+//     if (g_thread_man->threads[idx]) {
+//         g_thread_man->threads[idx]->shutdown = 1;
+//         skcp_free_queue(g_thread_man->threads[idx]->in_mq, free_in_mq_item);
+//         SKCP_FREEIF(g_thread_man->threads[idx]);
+//         g_thread_man->cnt--;
+//     }
+//     if (g_thread_man->cnt <= 0) {
+//         SKCP_FREEIF(g_thread_man);
+//     }
+// }
+
+// int skcp_thread_send(skcp_thread_msg_t *msg) {
+//     if (!msg || msg->tid <= 0 || !g_thread_man) {
+//         return SKCP_ERR;
+//     }
+//     int idx = msg->tid - 1;
+//     if (!g_thread_man->threads[idx]) {
+//         return SKCP_ERR;
+//     }
+//     if (skcp_push_queue(g_thread_man->threads[idx]->in_mq, msg) != 0) {
+//         return SKCP_ERR;
+//     }
+//     return SKCP_OK;
+// }
+
+// skcp_thread_msg_t *skcp_thread_recv(int tid) {
+//     if (tid <= 0 || !g_thread_man) {
+//         return NULL;
+//     }
+//     int idx = tid - 1;
+//     if (!g_thread_man->threads[idx] || !g_thread_man->threads[idx]->in_mq) {
+//         return NULL;
+//     }
+//     return (skcp_thread_msg_t *)skcp_pop_queue(g_thread_man->threads[idx]->in_mq);
+// }
+
+// skcp_thread_msg_t *skcp_thread_recv_block(int tid) {
+//     if (tid <= 0 || !g_thread_man) {
+//         return NULL;
+//     }
+//     int idx = tid - 1;
+//     if (!g_thread_man->threads[idx] || !g_thread_man->threads[idx]->in_mq) {
+//         return NULL;
+//     }
+//     return (skcp_thread_msg_t *)skcp_pop_block_queue(g_thread_man->threads[idx]->in_mq);
+// }
