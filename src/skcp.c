@@ -58,7 +58,6 @@ inline static skcp_cmd_t *decode_cmd(const char *buf, int len) {
         memcpy(cmd->payload, buf + SKCP_CMD_HEADER_LEN, cmd->payload_len);
     }
     // SKCP_LOG("decode_cmd len: %d %lu", len, sizeof(*cmd));
-
     return cmd;
 }
 
@@ -90,7 +89,9 @@ static void notify_input_cb(struct ev_loop *loop, struct ev_async *watcher, int 
 static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in dst_addr) {
     const uint ack_len = 1 + 1 + SKCP_TICKET_LEN + 1 + SKCP_IV_LEN + 1;
     // char ack[ack_len] = {0};
-    char *ack = (char *)SKCP_ALLOC(ack_len);  // split by "\n", format:"code\ncid\niv"
+    // SKCP_LOG("ack_len %u thread_id %lld", ack_len, pthread_self());
+    // char *ack = (char *)SKCP_ALLOC(ack_len);  // split by "\n", format:"code\ncid\niv"
+    char ack[68] = {0};  // TODO:
     int out_len = 0;
     char *buf = NULL;
     uint32_t cid = 0;
@@ -127,7 +128,7 @@ static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in dst
 
 send_req_cid_ack:
     buf = encode_cmd(0, SKCP_CMD_REQ_CID_ACK, ack, strlen(ack), &out_len);
-    SKCP_FREEIF(ack);
+    // TODO:  SKCP_FREEIF(ack);
     idx = skcp_route_io(cid, skcp->conf->io_cnt);
     rt = skcp_io_send(skcp->io_list[idx], buf, out_len, dst_addr);
     SKCP_FREEIF(buf);
@@ -192,9 +193,9 @@ static void engine_msg_handler(skcp_msg_t *eg_msg) {
     skcp_t *skcp = (skcp_t *)eg_msg->user_data;
     skcp_msg_t *msg = NULL;
     if (eg_msg->type == SKCP_MSG_TYPE_RECV) {
-        SKCP_INIT_MSG(msg, SKCP_MSG_TYPE_RECV, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, skcp);
+        msg = skcp_init_msg(SKCP_MSG_TYPE_RECV, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, NULL, skcp);
     } else if (SKCP_MSG_TYPE_CLOSE_TIMEOUT == eg_msg->type || SKCP_MSG_TYPE_CLOSE_MANUAL == eg_msg->type) {
-        SKCP_INIT_MSG(msg, eg_msg->type, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, skcp);
+        msg = skcp_init_msg(eg_msg->type, eg_msg->cid, eg_msg->buf, eg_msg->buf_len, NULL, skcp);
     } else {
         SKCP_LOG("engine_msg_handler error msg type %x", eg_msg->type);
     }
@@ -211,8 +212,9 @@ static void io_msg_handler(skcp_msg_t *io_msg) {
         uint32_t cid = 0;
         skcp_decode32u(io_msg->buf, &cid);
         // kcp msg
-        skcp_msg_t *eg_msg = NULL;
-        SKCP_INIT_ENGINE_MSG(eg_msg, SKCP_MSG_TYPE_INPUT, cid, io_msg->buf, io_msg->buf_len, skcp);
+        skcp_msg_t *eg_msg = skcp_init_msg(SKCP_MSG_TYPE_INPUT, cid, io_msg->buf, io_msg->buf_len, NULL, skcp);
+        // SKCP_INIT_ENGINE_MSG(eg_msg, SKCP_MSG_TYPE_INPUT, cid, io_msg->buf, io_msg->buf_len, skcp);
+
         // SKCP_FREE_MSG(io_msg);
         uint idx = skcp_route_engine(eg_msg->cid, skcp->conf->engine_cnt);
         // skcp_engine_t *engine = route_to_engine(skcp, eg_msg->cid);
@@ -226,7 +228,6 @@ static void io_msg_handler(skcp_msg_t *io_msg) {
             return;
         }
         skcp_cmd_t *cmd = decode_cmd(io_msg->buf, io_msg->buf_len);
-
         if (!cmd) {
             // _LOG("decode_cmd error");
             // SKCP_FREE_MSG(io_msg);
@@ -357,10 +358,10 @@ int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, size_t len) {
         return -1;
     }
 
-    skcp_msg_t *msg = NULL;
+    skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_SEND, cid, buf, len, NULL, skcp);
     uint idx = skcp_route_engine(cid, skcp->conf->engine_cnt);
     // skcp_engine_t *engine = route_to_engine(skcp, cid);
-    SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_SEND, cid, buf, len, skcp);
+    // SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_SEND, cid, buf, len, skcp);
     if (skcp_engine_feed(skcp->engine_list[idx], msg) != SKCP_OK) {
         return -1;
     }
@@ -381,8 +382,8 @@ uint32_t skcp_create_conn(skcp_t *skcp) {
 
 void skcp_close_conn(skcp_t *skcp, uint32_t cid) {
     uint idx = skcp_route_engine(cid, skcp->conf->engine_cnt);
-    skcp_msg_t *msg = NULL;
-    SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_MANUAL, cid, NULL, 0, NULL);
+    skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_CLOSE_MANUAL, cid, NULL, 0, NULL, NULL);
+    // SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_MANUAL, cid, NULL, 0, NULL);
     skcp_engine_feed(skcp->engine_list[idx], msg);
 }
 
@@ -393,9 +394,10 @@ int skcp_req_cid(skcp_t *skcp, const char *ticket, int len) {
 
     int out_len = 0;
     char *buf = encode_cmd(0, SKCP_CMD_REQ_CID, ticket, len, &out_len);
-    if (skcp_io_send(skcp->io_list[0], buf, len, skcp->io_list[0]->serv_addr) < 0) {
+    if (skcp_io_send(skcp->io_list[0], buf, out_len, skcp->io_list[0]->serv_addr) < 0) {
+        SKCP_FREEIF(buf);
         return SKCP_ERR;
     }
-
+    SKCP_FREEIF(buf);
     return SKCP_OK;
 }

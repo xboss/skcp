@@ -45,8 +45,8 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
     uint64_t now = skcp_getmillisecond();
     if (now - conn->last_r_tm > conn->conf->r_keepalive * 1000) {
         SKCP_LOG("engine tick_cb timeout %u", conn->id);
-        skcp_msg_t *msg = NULL;
-        SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_TIMEOUT, conn->id, NULL, 0, conn->skcp);
+        skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_CLOSE_TIMEOUT, conn->id, NULL, 0, NULL, conn->skcp);
+        // SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_TIMEOUT, conn->id, NULL, 0, conn->skcp);
         conn->engine->handler(msg);
         SKCP_FREE_MSG(msg);
         skcp_free_conn(conn->conn_slots, conn->id);
@@ -55,6 +55,7 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
 
 static void *routine_fn(void *arg) {
     skcp_engine_t *engine = (skcp_engine_t *)arg;
+    // SKCP_LOG("start engine thread start running ok %d %lld", engine->id, pthread_self());
     SKCP_LOG("start engine thread start running ok %d", engine->id);
     ev_run(engine->loop, 0);
     SKCP_LOG("start engine thread end running ok %d", engine->id);
@@ -83,8 +84,8 @@ static int on_msg_input(skcp_engine_t *engine, skcp_msg_t *msg) {
         return SKCP_ERR;
     }
     // ok
-    skcp_msg_t *recv_msg = NULL;
-    SKCP_INIT_ENGINE_MSG(recv_msg, SKCP_MSG_TYPE_RECV, msg->cid, kcp_recv_buf, recv_len, engine->user_data);
+    skcp_msg_t *recv_msg = skcp_init_msg(SKCP_MSG_TYPE_RECV, msg->cid, kcp_recv_buf, recv_len, NULL, engine->user_data);
+    // SKCP_INIT_ENGINE_MSG(recv_msg, SKCP_MSG_TYPE_RECV, msg->cid, kcp_recv_buf, recv_len, engine->user_data);
     SKCP_FREEIF(kcp_recv_buf);
     engine->handler(recv_msg);
     SKCP_FREE_MSG(recv_msg);
@@ -172,7 +173,7 @@ skcp_engine_t *skcp_engine_init(int id, skcp_conn_slots_t *conn_slots, skcp_conf
     ev_async_init(engine->notify_input_watcher, notify_input_cb);
     ev_async_start(engine->loop, engine->notify_input_watcher);
 
-    if (pthread_create(&engine->tid, NULL, routine_fn, engine)) {
+    if (pthread_create(&engine->tid, NULL, routine_fn, engine)) {  // TODO:  free it
         SKCP_LOG("start engine thread error %d", engine->id);
         skcp_engine_free(engine);
         return NULL;

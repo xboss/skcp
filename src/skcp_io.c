@@ -227,8 +227,8 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
     skcp_decode32u((const char *)plain_buf, &cid);
     if (cid == 0) {
         // pure udp
-        skcp_msg_t *msg = NULL;
-        SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_UDP, cliaddr, plain_buf, plain_len, io->user_data);
+        skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_UDP, 0, plain_buf, plain_len, &cliaddr, io->user_data);
+        // SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_UDP, cliaddr, plain_buf, plain_len, io->user_data);
         SKCP_FREEIF(plain_buf);
         io->handler(msg);
         SKCP_FREE_MSG(msg);
@@ -263,15 +263,18 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         return;
     }
 
-    skcp_msg_t *msg = NULL;
-    SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_DATA, cliaddr, plain_buf, plain_len, io->user_data);
+    skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_DATA, 0, plain_buf, plain_len, &cliaddr, io->user_data);
+    // SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_DATA, cliaddr, plain_buf, plain_len, io->user_data);
     SKCP_FREEIF(plain_buf);
     io->handler(msg);
     SKCP_FREE_MSG(msg);
 }
 
 static void *routine_fn(void *arg) {
+    // SKCP_LOG("io thread %lld", pthread_self());
     skcp_io_t *io = (skcp_io_t *)arg;
+    // char *test = SKCP_ALLOC(10);  // TODO: for test
+    // test[0] = 'A';
     ev_run(io->loop, 0);
     return NULL;
 }
@@ -354,7 +357,7 @@ skcp_io_t *skcp_io_init(skcp_conf_t *conf, void (*handler)(skcp_msg_t *), void *
     // ev_timer_set(io->tick_watcher, 0, interval);
     // ev_timer_start(io->loop, io->tick_watcher);
 
-    if (pthread_create(&io->tid, NULL, routine_fn, io)) {
+    if (pthread_create(&io->tid, NULL, routine_fn, io)) {  // TODO:  free it
         SKCP_LOG("start io thread error %s %d", io->addr, io->port);
         skcp_io_free(io);
         return NULL;
@@ -403,8 +406,8 @@ void skcp_io_free(skcp_io_t *io) {
 }
 
 int skcp_io_send(skcp_io_t *io, const char *buf, size_t len, struct sockaddr_in dst_addr) {
-    skcp_msg_t *msg = NULL;
-    SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_DATA, dst_addr, buf, len, NULL);
+    skcp_msg_t *msg = skcp_init_msg(SKCP_MSG_TYPE_DATA, 0, buf, len, &dst_addr, NULL);
+    // SKCP_INIT_IO_MSG(msg, SKCP_MSG_TYPE_DATA, dst_addr, buf, len, NULL);
     // (skcp_msg_t *)SKCP_ALLOC(sizeof(skcp_msg_t));
     // msg->buf_len = len;
     // msg->dst_addr = dst_addr;

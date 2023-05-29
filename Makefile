@@ -5,7 +5,7 @@ SRC = $(wildcard src/*.c)
 OBJ = $(patsubst src/%.c, %.o, $(SRC))
 OBJ_OUT = $(patsubst src/%.c, $(OUTPUT_DIR)%.o, $(SRC))
 INCLUDE = -I./src
-LIB = -lev -lssl -lcrypto
+LIB = -lev -lssl -lcrypto -lpthread
 
 TEST_SRC = $(wildcard test/*.c)
 TEST_OBJ = $(patsubst test/%.c, %.o, $(TEST_SRC))

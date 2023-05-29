@@ -9,42 +9,6 @@
 #define SKCP_IO_MODE_SERVER 1
 #define SKCP_IO_MODE_CLIENT 2
 
-// #define SKCP_IO_MSG_TYPE_DATA 0x1
-// #define SKCP_IO_MSG_TYPE_UDP 0x2
-
-// #define SKCP_IO_INIT_MSG(_v_msg, _v_type, _v_buf, _v_buf_len, _v_user_data)           \
-//     do {                                                                              \
-//         skcp_io_msg_t *(_v_msg) = (skcp_io_msg_t *)SKCP_ALLOC(sizeof(skcp_io_msg_t)); \
-//         (_v_msg)->type = (_v_type);                                                   \
-//         (_v_msg)->buf_len = (_v_buf_len);                                             \
-//         (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                             \
-//         memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                                \
-//         (_v_msg)->user_data = (_v_user_data);                                         \
-//     } while (0)
-
-// #define SKCP_IO_FREE_MSG(_v_msg)            \
-//     do {                                    \
-//         if ((_v_msg)) {                     \
-//             (_v_msg)->buf_len = 0;          \
-//             if ((_v_msg)->buf) {            \
-//                 SKCP_FREEIF((_v_msg)->buf); \
-//             }                               \
-//             SKCP_FREEIF((_v_msg));          \
-//         }                                   \
-//     } while (0)
-
-// typedef struct {
-//     u_char type;
-//     char *buf;
-//     size_t buf_len;
-//     struct sockaddr_in dst_addr;
-//     void *user_data;
-// } skcp_io_msg_t;
-
-// typedef void (*notify_fn_t)(skcp_queue_t *);
-
-// typedef void (*recv_fn_t)(const char *buf, size_t len);
-
 typedef struct skcp_io_s {
     int mode;  // 1: server; 2: client;
     char *addr;

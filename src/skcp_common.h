@@ -43,13 +43,19 @@
 #define SKCP_MSG_TYPE_CLOSE_TIMEOUT 0x6
 #define SKCP_MSG_TYPE_CLOSE_MANUAL 0x7
 
+/*
 #define SKCP_INIT_MSG(_v_msg, _v_type, _v_cid, _v_buf, _v_buf_len, _v_user_data) \
     do {                                                                         \
         (_v_msg) = (skcp_msg_t *)SKCP_ALLOC(sizeof(skcp_msg_t));                 \
         (_v_msg)->type = (_v_type);                                              \
-        (_v_msg)->buf_len = (_v_buf_len);                                        \
-        (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                        \
-        memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                           \
+        if ((_v_buf_len) > 0 && (_v_buf) != NULL) {                              \
+            (_v_msg)->buf_len = (_v_buf_len);                                    \
+            (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                    \
+            memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                       \
+        } else {                                                                 \
+            (_v_msg)->buf = NULL;                                                \
+            (_v_msg)->buf_len = 0;                                               \
+        }                                                                        \
         (_v_msg)->cid = (_v_cid);                                                \
         (_v_msg)->user_data = (_v_user_data);                                    \
     } while (0)
@@ -58,9 +64,14 @@
     do {                                                                                 \
         (_v_msg) = (skcp_msg_t *)SKCP_ALLOC(sizeof(skcp_msg_t));                         \
         (_v_msg)->type = (_v_type);                                                      \
-        (_v_msg)->buf_len = (_v_buf_len);                                                \
-        (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                                \
-        memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                                   \
+        if ((_v_buf_len) > 0 && (_v_buf) != NULL) {                                      \
+            (_v_msg)->buf_len = (_v_buf_len);                                            \
+            (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                            \
+            memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                               \
+        } else {                                                                         \
+            (_v_msg)->buf = NULL;                                                        \
+            (_v_msg)->buf_len = 0;                                                       \
+        }                                                                                \
         (_v_msg)->dst_addr = (_v_dst_addr);                                              \
         (_v_msg)->user_data = (_v_user_data);                                            \
     } while (0)
@@ -69,12 +80,49 @@
     do {                                                                                \
         (_v_msg) = (skcp_msg_t *)SKCP_ALLOC(sizeof(skcp_msg_t));                        \
         (_v_msg)->type = (_v_type);                                                     \
-        (_v_msg)->buf_len = (_v_buf_len);                                               \
-        (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                               \
-        memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                                  \
+        if ((_v_buf_len) > 0 && (_v_buf) != NULL) {                                     \
+            (_v_msg)->buf_len = (_v_buf_len);                                           \
+            (_v_msg)->buf = (char *)SKCP_ALLOC((_v_buf_len));                           \
+            memcpy((_v_msg)->buf, (_v_buf), (_v_buf_len));                              \
+        } else {                                                                        \
+            (_v_msg)->buf = NULL;                                                       \
+            (_v_msg)->buf_len = 0;                                                      \
+        }                                                                               \
         (_v_msg)->cid = (_v_cid);                                                       \
         (_v_msg)->user_data = (_v_user_data);                                           \
     } while (0)
+
+*/
+typedef struct {
+    u_char type;
+    char *buf;
+    size_t buf_len;
+    uint32_t cid;
+    struct sockaddr_in dst_addr;
+    // struct sockaddr dst_addr;
+    void *user_data;
+} skcp_msg_t;
+
+inline static skcp_msg_t *skcp_init_msg(u_char type, uint32_t cid, const char *buf, size_t buf_len,
+                                        struct sockaddr_in *dst_addr, void *user_data) {
+    skcp_msg_t *msg = (skcp_msg_t *)SKCP_ALLOC(sizeof(skcp_msg_t));
+    msg->type = type;
+    if (dst_addr) {
+        msg->dst_addr = *dst_addr;
+    }
+
+    if (buf_len > 0 && buf) {
+        msg->buf_len = buf_len;
+        msg->buf = (char *)SKCP_ALLOC((buf_len));
+        memcpy(msg->buf, (buf), (buf_len));
+    } else {
+        msg->buf = NULL;
+        msg->buf_len = 0;
+    }
+    msg->cid = cid;
+    msg->user_data = user_data;
+    return msg;
+}
 
 #define SKCP_FREE_MSG(_v_msg)               \
     do {                                    \
@@ -86,16 +134,6 @@
             SKCP_FREEIF((_v_msg));          \
         }                                   \
     } while (0)
-
-typedef struct {
-    u_char type;
-    char *buf;
-    size_t buf_len;
-    uint32_t cid;
-    struct sockaddr_in dst_addr;
-    // struct sockaddr dst_addr;
-    void *user_data;
-} skcp_msg_t;
 
 typedef struct skcp_conf_s {
     int mtu;
