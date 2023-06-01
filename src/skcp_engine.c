@@ -77,7 +77,7 @@ static int on_msg_input(skcp_engine_t *engine, skcp_msg_t *msg) {
     ikcp_update(conn->kcp, skcp_getms());
     if (recv_len < 0) {
         // TODO: 返回-1表示数据还没有收完数据，-3表示接受buf太小
-        if (recv_len != -1) {
+        if (recv_len == -3) {
             SKCP_LOG("ikcp_recv error %d cid: %u", recv_len, conn->id);
         }
         SKCP_FREEIF(kcp_recv_buf);
@@ -120,7 +120,7 @@ static int on_msg_close(skcp_engine_t *engine, skcp_msg_t *msg) {
 
 static void notify_input_cb(struct ev_loop *loop, struct ev_async *watcher, int revents) {
     skcp_engine_t *engine = (skcp_engine_t *)watcher->data;
-    SKCP_LOG("engine notify_input_cb %d", engine->id);
+    // SKCP_LOG("engine notify_input_cb %d", engine->id);
 
     // send
     while (engine->in_mq->size > 0) {

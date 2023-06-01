@@ -195,7 +195,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
         return;
     }
     skcp_io_t *io = (skcp_io_t *)(watcher->data);
-    SKCP_LOG("io read_cb %d", io->fd);
+    // SKCP_LOG("io read_cb %d", io->fd);
 
     char *raw_buf = (char *)SKCP_ALLOC(io->conf->r_buf_size);
     struct sockaddr_in cliaddr;
@@ -278,7 +278,7 @@ static void *routine_fn(void *arg) {
 
 static void notify_input_cb(struct ev_loop *loop, struct ev_async *watcher, int revents) {
     skcp_io_t *io = (skcp_io_t *)watcher->data;
-    SKCP_LOG("io notify_input_cb %d", io->fd);
+    // SKCP_LOG("io notify_input_cb %d", io->fd);
     // send
     while (io->in_mq->size > 0) {
         skcp_msg_t *msg = (skcp_msg_t *)skcp_pop_queue(io->in_mq);
