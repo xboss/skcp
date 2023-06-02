@@ -50,6 +50,16 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
         conn->engine->handler(msg);
         SKCP_FREE_MSG(msg);
         skcp_free_conn(conn->conn_slots, conn->id);
+        conn = NULL;
+    }
+
+    // TODO:  for test
+    if (conn) {
+        uint64_t t = now % 1000;
+        int waitsnd = ikcp_waitsnd(conn->kcp);
+        if (t > 0 && t < 20 && waitsnd > 10) {
+            SKCP_LOG(">>> waitsnd: %d", waitsnd);
+        }
     }
 }
 
@@ -106,6 +116,7 @@ static int on_msg_send(skcp_engine_t *engine, skcp_msg_t *msg) {
         return SKCP_ERR;
     }
     ikcp_update(conn->kcp, skcp_getms());
+    ikcp_flush(conn->kcp);  // TODO:
 
     return SKCP_OK;
 }

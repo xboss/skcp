@@ -165,7 +165,7 @@ typedef struct skcp_conf_s {
 #define SKCP_DEF_CONF(vconf)                     \
     do {                                         \
         memset((vconf), 0, sizeof(skcp_conf_t)); \
-        (vconf)->interval = 10;                  \
+        (vconf)->interval = 5;                   \
         (vconf)->mtu = 256;                      \
         (vconf)->rcvwnd = 1024;                  \
         (vconf)->sndwnd = 1024;                  \

@@ -136,7 +136,7 @@ skcp_conn_t *skcp_init_conn(skcp_conn_slots_t *conn_slots, skcp_conf_t *conf, ui
     ikcp_wndsize(kcp, conf->sndwnd, conf->rcvwnd);
     ikcp_nodelay(kcp, conf->nodelay, conf->interval, conf->nodelay, conf->nc);
     ikcp_setmtu(kcp, conf->mtu);
-    // kcp->rx_minrto = 10;  // TODO: for test
+    kcp->rx_minrto = conf->minrto;
     conn->kcp = kcp;
 
     uint idx = skcp_route_io(cid, io_cnt);
