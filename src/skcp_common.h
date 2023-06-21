@@ -165,8 +165,8 @@ typedef struct skcp_conf_s {
 #define SKCP_DEF_CONF(vconf)                     \
     do {                                         \
         memset((vconf), 0, sizeof(skcp_conf_t)); \
-        (vconf)->interval = 5;                   \
-        (vconf)->mtu = 256;                      \
+        (vconf)->interval = 1;                   \
+        (vconf)->mtu = 1024;                     \
         (vconf)->rcvwnd = 1024;                  \
         (vconf)->sndwnd = 1024;                  \
         (vconf)->nodelay = 1;                    \
@@ -181,7 +181,7 @@ typedef struct skcp_conf_s {
         (vconf)->kcp_buf_size = 2048;            \
         (vconf)->timeout_interval = 1;           \
         (vconf)->max_conn_cnt = SKCP_MAX_CONNS;  \
-        (vconf)->io_cnt = 5;                     \
+        (vconf)->io_cnt = 10;                    \
         (vconf)->engine_cnt = 5;                 \
     } while (0)
 

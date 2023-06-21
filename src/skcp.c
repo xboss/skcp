@@ -79,6 +79,8 @@ static void notify_input_cb(struct ev_loop *loop, struct ev_async *watcher, int 
             skcp->on_recv(skcp, msg->cid, msg->buf, msg->buf_len);
         } else if (msg->type == SKCP_MSG_TYPE_CLOSE_TIMEOUT || msg->type == SKCP_MSG_TYPE_CLOSE_MANUAL) {
             skcp->on_close(skcp, msg->cid, msg->type);
+            skcp_conn_t *conn = skcp_get_conn(skcp->conn_slots, msg->cid);
+            conn->status = SKCP_CONN_ST_OFF;
         } else {
             SKCP_LOG("skcp error msg type %x", msg->type);
         }

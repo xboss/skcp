@@ -36,6 +36,7 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
         SKCP_LOG("engine tick_cb real close %u", conn->id);
         ev_timer_stop(loop, watcher);
         skcp_free_conn(conn->conn_slots, conn->id);
+        conn = NULL;
         return;
     }
 
@@ -49,8 +50,8 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
         // SKCP_INIT_ENGINE_MSG(msg, SKCP_MSG_TYPE_CLOSE_TIMEOUT, conn->id, NULL, 0, conn->skcp);
         conn->engine->handler(msg);
         SKCP_FREE_MSG(msg);
-        skcp_free_conn(conn->conn_slots, conn->id);
-        conn = NULL;
+        // skcp_free_conn(conn->conn_slots, conn->id);
+        // conn = NULL;
     }
 
     // TODO:  for test
@@ -58,7 +59,7 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
         uint64_t t = now % 1000;
         int waitsnd = ikcp_waitsnd(conn->kcp);
         if (t > 0 && t < 20 && waitsnd > 10) {
-            SKCP_LOG(">>> waitsnd: %d", waitsnd);
+            SKCP_LOG(">>> waitsnd: %d cid: %u", waitsnd, conn->id);
         }
     }
 }
@@ -66,9 +67,9 @@ static void tick_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
 static void *routine_fn(void *arg) {
     skcp_engine_t *engine = (skcp_engine_t *)arg;
     // SKCP_LOG("start engine thread start running ok %d %lld", engine->id, pthread_self());
-    SKCP_LOG("start engine thread start running ok %d", engine->id);
+    SKCP_LOG("start engine thread ok %d", engine->id);
     ev_run(engine->loop, 0);
-    SKCP_LOG("start engine thread end running ok %d", engine->id);
+    SKCP_LOG("engine thread end %d", engine->id);
     return NULL;
 }
 
@@ -136,6 +137,7 @@ static void notify_input_cb(struct ev_loop *loop, struct ev_async *watcher, int 
     // send
     while (engine->in_mq->size > 0) {
         skcp_msg_t *msg = (skcp_msg_t *)skcp_pop_queue(engine->in_mq);
+        // SKCP_LOG("engine notify_input_cb %d %d", engine->id, engine->in_mq->size);
         // if (!msg) {
         //     continue;
         // }
