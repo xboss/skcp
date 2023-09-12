@@ -15,12 +15,14 @@
         printf("\n");        \
     } while (0)
 
-static struct ev_io *stdin_watcher = NULL;
 static struct ev_timer *beat_watcher = NULL;
 static uint32_t g_cid = 0;
+static char *g_ticket = "12345678901234567890123456789012";
+static char *g_key = "12345678123456781234567812345678";
+skcp_conf_t *conf = NULL;
 static skcp_t *skcp = NULL;
 struct ev_loop *loop = NULL;
-ev_idle idle;
+uint64_t msg_id = 0;
 
 inline static void char_to_hex(char *src, int len, char *des) {
     char hex_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -30,70 +32,36 @@ inline static void char_to_hex(char *src, int len, char *des) {
     }
 }
 
-static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
-    if (!buf || buf_len < 1) {
-        fprintf(stderr, "on_recv_data buf error\n");
-        return;
-    }
-    if (buf[0] != 'D' && buf[0] != 'O' && buf[0] != 'I') {
-        fprintf(stderr, "on_recv_data cmd error\n");
-        return;
-    }
+static int on_check_ticket(skcp_t *skcp, char *ticket, int len) { return 0; }
 
-    if (buf[0] == 'D') {
-        // cmd data
-        char *pb = buf + 1;
-        fprintf(stdout, "%s", pb);
-        fflush(stdout);
-        return;
-    }
-    // _LOG("client on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
+static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
+    assert(buf);
+    assert(buf_len > 0 && buf_len < SKCP_MAX_RW_BUF_LEN);
+
+    char msg[SKCP_MAX_RW_BUF_LEN] = {0};
+    memcpy(msg, buf, buf_len);
+    _LOG("client on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
 }
 static void on_close(skcp_t *skcp, uint32_t cid) {
-    // _LOG("server on_close cid: %u", cid);
+    _LOG("server on_close cid: %u", cid);
     g_cid = 0;
 }
 
-static void stdin_read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
-    ev_io_stop(loop, watcher);
-    ev_idle_start(loop, &idle);
-}
-
-static void idle_cb(struct ev_loop *loop, struct ev_idle *watcher, int revents) {
-    skcp_conn_t *conn = skcp_get_conn(skcp, g_cid);
-    if (conn && conn->status == SKCP_CONN_ST_ON) {
-        // connection alive
-        char inbuf[1600] = {0};
-        inbuf[0] = 'D';
-        char *pb = inbuf + 1;
-        fread(pb, sizeof(inbuf) - 2, 1, stdin);
-        size_t inbuf_len = strlen(inbuf);
-        if (inbuf_len > 1) {
-            // _LOG("%s len:%lu", inbuf, inbuf_len);
-            int rt = skcp_send(skcp, g_cid, inbuf, inbuf_len);
-            assert(rt >= 0);
-        }
-    }
-    // else {
-    //     fprintf(stderr, "idle_cb skcp cid not ready\n");
-    // }
-    ev_io_start(loop, stdin_watcher);
-}
-
 static void on_recv_cid(skcp_t *skcp, uint32_t cid) {
-    // _LOG("on_recv cid: %u", cid);
+    _LOG("on_recv cid: %u", cid);
     g_cid = cid;
     return;
 }
 
 static void beat_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents) {
     if (g_cid <= 0) {
-        int rt = skcp_req_cid(skcp, skcp->conf->ticket, strlen(skcp->conf->ticket));
+        int rt = skcp_req_cid(skcp, g_ticket, strlen(g_ticket));
         assert(rt > 0);
-        // _LOG("send cid request");
+        _LOG("send cid request");
     } else {
-        // ping
-        char msg[] = "I";
+        // send msg
+        char msg[SKCP_MAX_RW_BUF_LEN] = "hello from client";
+        sprintf(msg, "%llu hello from client", msg_id++);
         int rt = skcp_send(skcp, g_cid, msg, strlen(msg));
         assert(rt >= 0);
     }
@@ -145,7 +113,7 @@ inline static int parse_args(skcp_conf_t *conf, int argc, char const *argv[]) {
 /*                                    main                                    */
 /* -------------------------------------------------------------------------- */
 int main(int argc, char const *argv[]) {
-    // _LOG("test start...");
+    _LOG("test start...");
 
 #if (defined(__linux__) || defined(__linux))
     loop = ev_loop_new(EVBACKEND_EPOLL);
@@ -155,10 +123,10 @@ int main(int argc, char const *argv[]) {
     loop = ev_default_loop(0);
 #endif
 
-    skcp_conf_t *conf = malloc(sizeof(skcp_conf_t));
+    conf = malloc(sizeof(skcp_conf_t));
     memset(conf, 0, sizeof(skcp_conf_t));
     conf->interval = 10;
-    conf->r_buf_size = conf->mtu = 1024;
+    // conf->mtu = 1024;
     conf->rcvwnd = 128;
     conf->sndwnd = 128;
     conf->nodelay = 1;
@@ -169,12 +137,11 @@ int main(int argc, char const *argv[]) {
 
     conf->addr = "127.0.0.1";
     conf->port = 6060;
-    memcpy(conf->key, &"12345678123456781234567812345678", SKCP_KEY_LEN);
-    memcpy(conf->ticket, "12345678901234567890123456789012", SKCP_TICKET_LEN);
-    conf->kcp_buf_size = 2048;
-    conf->timeout_interval = 1;
+    memcpy(conf->key, g_key, SKCP_KEY_LEN);
+    memcpy(conf->ticket, g_ticket, SKCP_TICKET_LEN);
     conf->max_conn_cnt = 1024;
 
+    conf->on_check_ticket = on_check_ticket;
     conf->on_close = on_close;
     conf->on_recv_cid = on_recv_cid;
     conf->on_recv_data = on_recv_data;
@@ -188,27 +155,16 @@ int main(int argc, char const *argv[]) {
     skcp = skcp_init(conf, loop, NULL, SKCP_MODE_CLI);
     assert(skcp);
 
-    if (-1 == fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) | O_NONBLOCK)) {
-        fprintf(stderr, "error fcntl");
-        return 1;
-    }
-
-    ev_idle_init(&idle, idle_cb);
-
-    stdin_watcher = malloc(sizeof(struct ev_io));
-    ev_io_init(stdin_watcher, stdin_read_cb, STDIN_FILENO, EV_READ);
-    ev_io_start(loop, stdin_watcher);
-
     beat_watcher = malloc(sizeof(ev_timer));
     ev_init(beat_watcher, beat_cb);
     ev_timer_set(beat_watcher, 0, 1);
-    ev_timer_start(skcp->loop, beat_watcher);
+    ev_timer_start(loop, beat_watcher);
 
     ev_run(loop, 0);
 
     skcp_free(skcp);
     free(conf);
 
-    // _LOG("test end...");
+    _LOG("test end...");
     return 0;
 }
