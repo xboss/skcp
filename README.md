@@ -58,5 +58,5 @@ cd build
 默认连接127.0.0.1地址的6060端口。
 可以通过参数指定需要连接的网络接口和端口以及加密的key：
 ```
-./skcp_client -a 0.0.0.0 -p 8080 -k yourpassword
+./skcp_client -a 127.0.0.1 -p 8080 -k yourpassword
 ```
