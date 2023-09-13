@@ -124,7 +124,6 @@ int main(int argc, char const *argv[]) {
     conf->port = 6060;
     memcpy(conf->key, g_key, SKCP_KEY_LEN);
     memcpy(conf->ticket, g_ticket, SKCP_TICKET_LEN);
-    conf->max_conn_cnt = 1024;
 
     conf->on_accept = on_accept;
     conf->on_check_ticket = on_check_ticket;

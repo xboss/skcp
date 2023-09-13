@@ -41,7 +41,7 @@ typedef struct skcp_conf_s {
 
     char *addr;
     uint16_t port;
-    uint32_t max_conn_cnt;
+    // uint32_t max_conn_cnt;
     char key[SKCP_KEY_LEN + 1];
     char ticket[SKCP_TICKET_LEN + 1];
 
@@ -95,7 +95,6 @@ struct skcp_s {
         (vconf)->w_keepalive = 600;              \
         (vconf)->addr = NULL;                    \
         (vconf)->port = 1111;                    \
-        (vconf)->max_conn_cnt = SKCP_MAX_CONNS;  \
     } while (0)
 
 skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP_MODE mode);
