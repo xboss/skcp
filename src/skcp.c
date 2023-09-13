@@ -484,7 +484,7 @@ static void on_recv_req_sid_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_i
     }
     // send ack sid cmd to client
     char *t = pkt->ticket;
-    BUILD_SKCP_PKT(ack_pkt, SKCP_CMD_CTRL_ACK_CID, cid, 0, t, NULL);
+    BUILD_SKCP_PKT(ack_pkt, SKCP_CMD_CTRL_ACK_CID, cid, 0, t, "");
     if (udp_send(skcp, &ack_pkt, addr) <= 0) {
         return;
     }
@@ -598,7 +598,7 @@ int skcp_req_cid(skcp_t *skcp, const char *ticket, int len) {
         return -1;
     }
 
-    BUILD_SKCP_PKT(pkt, SKCP_CMD_CTRL_REQ_CID, 0, 0, ticket, NULL);
+    BUILD_SKCP_PKT(pkt, SKCP_CMD_CTRL_REQ_CID, 0, 0, ticket, "");
     return udp_send(skcp, &pkt, skcp->servaddr);
 }
 
