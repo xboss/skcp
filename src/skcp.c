@@ -1,8 +1,11 @@
 #include "skcp.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <openssl/aes.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,21 +14,63 @@
 #include <time.h>
 #include <unistd.h>
 
-#define _ALLOC(element_size) calloc(1, element_size)
+#if !defined(_IF_NULL)
+#define _IF_NULL(v) if (NULL == (v))
+#endif  // _IF_NULL
 
-#define _FREEIF(p)    \
+#if !defined(_ALLOC)
+#define _ALLOC(v_type, v_element_size) (v_type *)calloc(1, (v_element_size))
+#endif  // _ALLOC
+
+#if !defined(_ALLOC_IF)
+#define _ALLOC_IF(v_el, v_type, v_el_size)     \
+    (v_el) = (v_type *)calloc(1, (v_el_size)); \
+    if (NULL == (v_el))
+#endif  // _ALLOC_IF
+
+#if !defined(_ALLOC_OR_EXIT)
+#define _ALLOC_OR_EXIT(v_el, v_type, v_el_size) \
+    _ALLOC_IF(v_el, v_type, v_el_size) {        \
+        perror("alloc error");                  \
+        exit(1);                                \
+    }
+#endif  // _ALLOC_OR_EXIT
+
+#if !defined(_NEW_IF)
+#define _NEW_IF(v_el, v_type, v_el_size) v_type *_ALLOC_IF(v_el, v_type, v_el_size)
+#endif  // _NEW_IF
+
+#if !defined(_NEW_OR_EXIT)
+#define _NEW_OR_EXIT(v_el, v_type, v_el_size) \
+    _NEW_IF(v_el, v_type, v_el_size) {        \
+        perror("alloc error");                \
+        exit(1);                              \
+    }
+#endif  // _NEW_OR_EXIT
+
+#if !defined(_FREE_IF)
+#define _FREE_IF(p)   \
     do {              \
         if (p) {      \
             free(p);  \
             p = NULL; \
         }             \
     } while (0)
+#endif  // _FREE_IF
 
+#if !defined(_IF_STR_EMPTY)
+#define _IF_STR_EMPTY(v) if ((v) != NULL && strlen((v)) > 0)
+#endif  // _IF_STR_EMPTY
+
+#if !defined(_LOG)
 #define _LOG(fmt, args...)   \
     do {                     \
         printf(fmt, ##args); \
         printf("\n");        \
     } while (0)
+#endif  // _LOG
+
+#define SKCP_MAX_CID (2 ^ 32)
 
 /* -------------------------------------------------------------------------- */
 /*                               common function                              */
@@ -38,6 +83,14 @@ inline static uint64_t getmillisecond() {
 }
 
 inline static uint32_t getms() { return (uint32_t)(getmillisecond() & 0xfffffffful); }
+
+// inline static void build_iv(char *iv, const uint32_t cid, const char *ticket) {
+//     char iv_str[SKCP_IV_LEN + 1] = {0};
+//     snprintf(iv_str, SKCP_IV_LEN + 1, "%u", cid);
+//     for (size_t i = strlen(iv_str); i < SKCP_IV_LEN && i < SKCP_TICKET_LEN; i++) {
+//         iv_str[i] = ticket[i];
+//     }
+// }
 
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
@@ -76,8 +129,8 @@ inline static void aes_cbc_encrpyt(const char *raw_buf, char **encrpy_buf, int l
     unsigned char *siv = str2hex(iv);
     AES_set_encrypt_key(skey, 128, &aes_key);
     AES_cbc_encrypt((unsigned char *)raw_buf, (unsigned char *)*encrpy_buf, len, &aes_key, siv, AES_ENCRYPT);
-    _FREEIF(skey);
-    _FREEIF(siv);
+    _FREE_IF(skey);
+    _FREE_IF(siv);
 }
 inline static void aes_cbc_decrypt(const char *raw_buf, char **encrpy_buf, int len, const char *key, const char *iv) {
     AES_KEY aes_key;
@@ -85,8 +138,8 @@ inline static void aes_cbc_decrypt(const char *raw_buf, char **encrpy_buf, int l
     unsigned char *siv = str2hex(iv);
     AES_set_decrypt_key(skey, 128, &aes_key);
     AES_cbc_encrypt((unsigned char *)raw_buf, (unsigned char *)*encrpy_buf, len, &aes_key, siv, AES_DECRYPT);
-    _FREEIF(skey);
-    _FREEIF(siv);
+    _FREE_IF(skey);
+    _FREE_IF(siv);
 }
 inline static char *aes_encrypt(const char *key, const char *iv, const char *in, int in_len, int *out_len) {
     int padding_size = in_len;
@@ -100,7 +153,7 @@ inline static char *aes_encrypt(const char *key, const char *iv, const char *in,
     memset(out_buf, 0, padding_size);
     aes_cbc_encrpyt(after_padding_buf, &out_buf, padding_size, key, iv);
     if (in_len % 16 != 0) {
-        _FREEIF(after_padding_buf);
+        _FREE_IF(after_padding_buf);
     }
     return out_buf;
 }
@@ -117,7 +170,7 @@ static char *aes_decrypt(const char *key, const char *iv, const char *in, int in
     memset(out_buf, 0, padding_size);
     aes_cbc_decrypt(after_padding_buf, &out_buf, padding_size, key, iv);
     if (in_len % 16 != 0) {
-        _FREEIF(after_padding_buf);
+        _FREE_IF(after_padding_buf);
     }
     return out_buf;
 }
@@ -126,153 +179,83 @@ static char *aes_decrypt(const char *key, const char *iv, const char *in, int in
 /*                                  protocol                                  */
 /* -------------------------------------------------------------------------- */
 
-#define SKCP_CMD_REQ_CID 0x01
-#define SKCP_CMD_REQ_CID_ACK 0x02
-// #define SKCP_CMD_REQ_CID_COMP 0x02
-#define SKCP_CMD_DATA 0x03
-// #define SKCP_CMD_PING 0x04
-// #define SKCP_CMD_PONG 0x05
-// #define SKCP_CMD_CLOSE 0x06
-// #define SKCP_CMD_CLOSE_ACK 0x07
+/**
+skcp format: cmd(char)cid(uint32)ticket(char[32])remain_length(uint32)payload
+skcp head length: 1+4+32+4 = 41B
+ether header and crc length: 18B
+IP header length: 20B
+UDP header length: 8B
+KCP header length: 24B
+total = skcp_header + kcp_header + kcp_MTU
+total = 1500
+total_16 = 1488
+kcp_MTU = 1488 - 41 = 1447
+**/
 
-#define SKCP_CMD_HEADER_LEN 9
+#define SKCP_HEADER_LEN 41
+#define SKCP_CMD_DATA_UDP 'U'
+#define SKCP_CMD_DATA_KCP 'K'
+#define SKCP_CMD_CTRL_REQ_CID 'R'
+#define SKCP_CMD_CTRL_ACK_CID 'A'
 
-typedef struct {
-    uint32_t id;
-    char type;
-    uint32_t payload_len;
-    char payload[0];
-} skcp_cmd_t;
+// #define SKCP_MAX_UDP_PAYLOAD_LEN (SKCP_MAX_RW_BUF_LEN - SKCP_HEADER_LEN)
+// #define SKCP_MAX_KCP_PAYLOAD_LEN (SKCP_MAX_UDP_PAYLOAD_LEN - 24)
+#define SKCP_MAX_RW_BUF_LEN_16 (floor(SKCP_MAX_RW_BUF_LEN / 16.0) * 16)
+#define KCP_MAX_MTU floor((SKCP_MAX_RW_BUF_LEN_16 - SKCP_HEADER_LEN))
 
-inline static char *encode_cmd(uint32_t id, char type, const char *buf, int len, int *out_len) {
-    char *raw = (char *)_ALLOC(SKCP_CMD_HEADER_LEN + len);
-    uint32_t nid = htonl(id);
-    memcpy(raw, &nid, 4);
-    *(raw + 4) = type;
-    uint32_t payload_len = htonl(len);
-    memcpy(raw + 5, &payload_len, 4);
-    if (len > 0) {
-        memcpy(raw + SKCP_CMD_HEADER_LEN, buf, len);
-    }
-    *out_len = len + SKCP_CMD_HEADER_LEN;
+typedef struct skcp_pkt_s {
+    char cmd;
+    uint32_t cid;
+    char ticket[SKCP_TICKET_LEN];
+    uint32_t remain_len;
+    char payload[SKCP_MAX_RW_BUF_LEN];
+} skcp_pkt_t;
 
-    return raw;
-}
+#define BUILD_SKCP_PKT(v_el, v_cmd, v_cid, v_remain_len, v_ticket_p, v_paload) \
+    assert((v_remain_len) <= SKCP_MAX_RW_BUF_LEN);                             \
+    skcp_pkt_t v_el = {                                                        \
+        .cmd = (v_cmd),                                                        \
+        .cid = (v_cid),                                                        \
+        .remain_len = (v_remain_len),                                          \
+    };                                                                         \
+    if ((v_ticket_p)) memcpy((v_el).ticket, (v_ticket_p), SKCP_TICKET_LEN);    \
+    if ((v_remain_len) > 0) memcpy((v_el).payload, (v_paload), (v_remain_len))
 
-inline static skcp_cmd_t *decode_cmd(const char *buf, int len) {
-    skcp_cmd_t *cmd = (skcp_cmd_t *)_ALLOC(sizeof(skcp_cmd_t) + (len - SKCP_CMD_HEADER_LEN));
-    // _LOG("decode_cmd len: %d", len);
-    cmd->id = ntohl(*(uint32_t *)buf);
-    cmd->type = *(buf + 4);
-    cmd->payload_len = ntohl(*(uint32_t *)(buf + 5));
-    if (len > SKCP_CMD_HEADER_LEN) {
-        memcpy(cmd->payload, buf + SKCP_CMD_HEADER_LEN, cmd->payload_len);
-    }
-    // _LOG("decode_cmd len: %d %lu", len, sizeof(*cmd));
-
-    return cmd;
-}
-
-/* -------------------------------------------------------------------------- */
-/*                              connection slots                              */
-/* -------------------------------------------------------------------------- */
-
-static skcp_conn_slots_t *init_conn_slots(uint32_t max_conns) {
-    skcp_conn_slots_t *slots = (skcp_conn_slots_t *)_ALLOC(sizeof(skcp_conn_slots_t));
-    slots->max_cnt = max_conns > 0 ? max_conns : SKCP_MAX_CONNS;
-    slots->remain_cnt = slots->max_cnt;
-    // slots->conns = (skcp_conn_t **)_ALLOC(slots->max_cnt * sizeof(skcp_conn_t));
-    slots->conns = (skcp_conn_t **)_ALLOC(slots->max_cnt * sizeof(skcp_conn_t *));
-    slots->remain_id_stack = (uint32_t *)_ALLOC(slots->max_cnt * sizeof(uint32_t));
-    for (uint32_t i = 0; i < slots->max_cnt; i++) {
-        slots->remain_id_stack[i] = i + 1;
-    }
-    slots->remain_idx = 0;
-    return slots;
-}
-
-static void free_conn_slots(skcp_conn_slots_t *slots) {
-    if (!slots) {
-        return;
-    }
-    _FREEIF(slots->conns);
-    _FREEIF(slots->remain_id_stack);
-    _FREEIF(slots);
-}
-
-inline static skcp_conn_t *get_conn_from_slots(skcp_conn_slots_t *slots, uint32_t cid) {
-    if (slots == NULL || cid <= 0 || cid > slots->max_cnt) {
-        return NULL;
-    }
-    return slots->conns[cid - 1];
-}
-
-// 借一个连接id，仅供slots内部使用，失败返回0，成功返回cid
-inline static uint32_t borrow_cid(skcp_conn_slots_t *slots) {
-    if (!slots || !slots->remain_id_stack || slots->remain_cnt <= 0 || slots->remain_cnt > slots->max_cnt ||
-        slots->remain_idx > (slots->max_cnt - 1) || slots->remain_idx < 0) {
+inline static int skcp_pack(skcp_pkt_t *pkt, char *buf, int len) {
+    int total_len = SKCP_HEADER_LEN + pkt->remain_len;
+    if (!pkt || len < total_len || SKCP_MAX_RW_BUF_LEN < total_len) {
         return 0;
     }
-    uint32_t cid = slots->remain_id_stack[slots->remain_idx];
-    slots->remain_idx++;
-    slots->remain_cnt--;
-    return cid;
+    *buf = pkt->cmd;
+    uint32_t n_cid = htonl(pkt->cid);
+    memcpy(buf + 1, &n_cid, 4);
+    memcpy(buf + 5, pkt->ticket, SKCP_TICKET_LEN);
+    uint32_t n_remain_len = htonl(pkt->remain_len);
+    memcpy(buf + 37, &n_remain_len, 4);
+    memcpy(buf + 41, pkt->payload, pkt->remain_len);
+    assert(len > SKCP_HEADER_LEN + pkt->remain_len);
+    return SKCP_HEADER_LEN + pkt->remain_len;
 }
 
-// 归还一个连接id，仅供slots内部使用，失败返回-1，成功返回0
-inline static int return_cid(skcp_conn_slots_t *slots, uint32_t cid) {
-    if (!slots || !slots->remain_id_stack || slots->remain_cnt < 0 || slots->remain_cnt >= slots->max_cnt ||
-        slots->remain_idx > slots->max_cnt || slots->remain_idx <= 0 || cid <= 0) {
-        return -1;
+inline static bool skcp_unpack(char *buf, int len, skcp_pkt_t *pkt) {
+    if (!buf || len < SKCP_HEADER_LEN || !pkt) {
+        return false;
     }
-    slots->remain_idx--;
-    slots->remain_id_stack[slots->remain_idx] = cid;
-    slots->remain_cnt++;
-    return 0;
-}
-
-// 添加一个新连接到slots，注意此时传进来的conn中的cid并没有生成，失败返回0，成功返回cid
-static uint32_t add_new_conn_to_slots(skcp_conn_slots_t *slots, skcp_conn_t *conn) {
-    if (!slots || !conn) {
-        return 0;
+    pkt->cmd = *buf;
+    if (pkt->cmd != SKCP_CMD_DATA_UDP && pkt->cmd != SKCP_CMD_DATA_KCP && pkt->cmd != SKCP_CMD_CTRL_REQ_CID &&
+        pkt->cmd != SKCP_CMD_CTRL_ACK_CID) {
+        return false;
     }
-    conn->id = borrow_cid(slots);
-    if (conn->id <= 0) {
-        return 0;
+    pkt->cid = ntohl(*(uint32_t *)(buf + 1));
+    memcpy(pkt->ticket, buf + 5, SKCP_TICKET_LEN);
+    pkt->remain_len = ntohl(*(uint32_t *)(buf + 37));
+    if (pkt->remain_len > len - SKCP_HEADER_LEN) {
+        return false;
     }
-
-    uint32_t i = conn->id - 1;
-    if (slots->conns[i] != NULL) {
-        return_cid(slots, conn->id);
-        return 0;
+    if (pkt->remain_len > 0) {
+        memcpy(pkt->payload, buf + 41, pkt->remain_len);
     }
-    slots->conns[i] = conn;
-    return conn->id;
-}
-
-// 覆盖一个连接到slots，失败返回0，成功返回cid
-static uint32_t replace_conn_to_slots(skcp_conn_slots_t *slots, skcp_conn_t *conn) {
-    if (!slots || !conn || conn->id <= 0) {
-        return 0;
-    }
-
-    slots->conns[conn->id - 1] = conn;
-    return conn->id;
-}
-
-// 从slots中删除一个连接，并且归还cid，失败返回-1，成功返回0
-static int del_conn_from_slots(skcp_conn_slots_t *slots, uint32_t cid) {
-    if (!slots || cid <= 0) {
-        return -1;
-    }
-    // int rt = return_cid(slots, cid);
-    // if (rt != 0) {
-    //     return -1;
-    // }
-    return_cid(slots, cid);
-    slots->conns[cid - 1] = NULL;
-
-    return 0;
+    return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -280,25 +263,16 @@ static int del_conn_from_slots(skcp_conn_slots_t *slots, uint32_t cid) {
 /* -------------------------------------------------------------------------- */
 
 /* ------------------------------- definitions ------------------------------- */
-static char *def_iv = "9586cda28238ab24c8a484df6e355f90";
+static char *def_iv = "9586cda28238ab24c8a484df6e355f91";
 
 /* ------------------------------- private api ------------------------------ */
 
-// TODO: 可优化，有可能生成一样的iv
-inline static void rand_iv(char *iv) {
-    if (!iv) {
-        return;
+inline static uint32_t gen_cid(skcp_t *skcp) {
+    skcp->cid_seed++;
+    if (skcp->cid_seed > SKCP_MAX_CID) {
+        skcp->cid_seed = 1;
     }
-
-    char s[] = "0123456789abcdef";
-    srand((unsigned)time(NULL));
-    for (size_t i = 0; i < SKCP_IV_LEN; i++) {
-        int j = rand() % 16;
-        if (i == 0 && j == 0) {
-            j = rand() % 15 + 1;
-        }
-        iv[i] = s[j];
-    }
+    return skcp->cid_seed;
 }
 
 static int init_cli_network(skcp_t *skcp) {
@@ -356,24 +330,49 @@ static int init_serv_network(skcp_t *skcp) {
     return 0;
 }
 
-inline static int udp_send(skcp_t *skcp, const char *buf, int len, struct sockaddr_in dest_addr) {
-    if (!buf || len <= 0) {
+static int udp_send(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in target_addr) {
+    char buf[SKCP_MAX_RW_BUF_LEN] = {0};
+    int len = skcp_pack(pkt, buf, sizeof(buf));
+    if (len <= 0) {
+        _LOG("skcp pack error");
         return -1;
     }
 
-    // 加密
-    char *cipher_buf = NULL;
-    int cipher_buf_len = 0;
-    if (strlen(skcp->conf->key) > 0) {
-        cipher_buf = aes_encrypt(skcp->conf->key, def_iv, buf, len, &cipher_buf_len);
+    // encrypt
+    char *cipher_txt = buf;
+    int cipher_txt_len = len;
+    _IF_STR_EMPTY(skcp->key) {
+        cipher_txt = aes_encrypt(skcp->key, def_iv, buf, len, &cipher_txt_len);  // TODO: 性能优化
+    }
+    int wlen = sendto(skcp->fd, cipher_txt, cipher_txt_len, 0, (struct sockaddr *)&target_addr, sizeof(target_addr));
+    _IF_STR_EMPTY(skcp->key) { _FREE_IF(cipher_txt); }
+    if (wlen <= 0) {
+        _LOG("udp send error %s", strerror(errno));
+        return -1;
+    }
+    assert(cipher_txt_len == wlen);
+    return wlen;
+}
+
+static int udp_recv(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in *from_addr) {
+    char raw[SKCP_MAX_RW_BUF_LEN] = {0};
+    socklen_t addr_len = sizeof(*from_addr);
+    int rlen = recvfrom(skcp->fd, raw, sizeof(raw), 0, (struct sockaddr *)from_addr, &addr_len);
+    if (rlen <= 0) {
+        _LOG("udp recv error %s", strerror(errno));
+        return -1;
     }
 
-    int rt = sendto(skcp->fd, cipher_buf, cipher_buf_len, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    _FREEIF(cipher_buf);
-    if (rt < 0) {
-        perror("udp send error");
-    }
+    // decrypt
+    char *plain_txt = raw;
+    int plain_txt_len = rlen;
+    _IF_STR_EMPTY(skcp->key) { plain_txt = aes_decrypt(skcp->key, def_iv, raw, rlen, &plain_txt_len); }
 
+    int rt = -1;
+    if (skcp_unpack(plain_txt, plain_txt_len, pkt)) {
+        rt = plain_txt_len;
+    }
+    _IF_STR_EMPTY(skcp->key) { _FREE_IF(plain_txt); }
     return rt;
 }
 
@@ -383,47 +382,18 @@ static int kcp_output(const char *buf, int len, struct IKCPCB *kcp, void *user) 
     // if (conn->skcp->mode == SKCP_MODE_SERV && ikcp_waitsnd(kcp) > 200) {  // TODO: for test
     //     _LOG("kcp_output cid: %u", kcp->conv);
     // }
+    // assert(len <= SKCP_MAX_UDP_PAYLOAD_LEN);
 
-    int rt = udp_send(conn->skcp, buf, len, conn->dest_addr);
+    char *t = conn->ticket;
+    // _LOG("kcp_output ticket:%s", t);
+    BUILD_SKCP_PKT(pkt, SKCP_CMD_DATA_KCP, conn->id, len, t, buf);
+
+    int rt = udp_send(conn->skcp, &pkt, conn->target_addr);
     if (rt > 0) {
         conn->last_w_tm = getmillisecond();
     }
 
     return rt;
-}
-
-static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
-    if (!skcp || !conn) {
-        return;
-    }
-
-    if (skcp->conn_slots) {
-        int rt = del_conn_from_slots(skcp->conn_slots, conn->id);
-        if (rt != 0) {
-            // _LOG("del_conn_from_slots error cid: %u", conn->id);
-        }
-    }
-
-    if (conn->kcp) {
-        ikcp_release(conn->kcp);
-        conn->kcp = NULL;
-    }
-
-    if (conn->timeout_watcher) {
-        ev_timer_stop(skcp->loop, conn->timeout_watcher);
-        _FREEIF(conn->timeout_watcher);
-    }
-
-    if (conn->kcp_update_watcher) {
-        ev_timer_stop(skcp->loop, conn->kcp_update_watcher);
-        _FREEIF(conn->kcp_update_watcher);
-    }
-
-    conn->status = SKCP_CONN_ST_OFF;
-    conn->id = 0;
-    conn->user_data = NULL;
-
-    _FREEIF(conn);
 }
 
 static void kcp_update_cb(struct ev_loop *loop, ev_timer *watcher, int revents) {
@@ -432,56 +402,37 @@ static void kcp_update_cb(struct ev_loop *loop, ev_timer *watcher, int revents) 
         return;
     }
     skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
-    ikcp_update(conn->kcp, getms());  // clock()
-}
+    ikcp_update(conn->kcp, getms());
 
-static void conn_timeout_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents) {
-    if (EV_ERROR & revents) {
-        // _LOG("timeout_cb got invalid event");
-        return;
-    }
-    skcp_conn_t *conn = (skcp_conn_t *)(watcher->data);
+    // check timeout
     uint64_t now = getmillisecond();
     if (now - conn->last_r_tm > conn->skcp->conf->r_keepalive * 1000) {
         // _LOG("timeout cid: %u", conn->id);
         skcp_close_conn(conn->skcp, conn->id);
         return;
     }
-    // int wait_snd = ikcp_waitsnd(conn->kcp);
-    // _LOG("wait_snd: %d", wait_snd);  // TODO: for test
-
-    // if (conn->status == SKCP_CONN_ST_READY && conn->estab_tm - now > conn->skcp->conf->estab_timeout) {
-    //     skcp_close_conn(conn->skcp, conn->id);
-    //     return;
-    // }
 }
 
-static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid) {
+/* ------------------------------- connection ------------------------------- */
+inline static skcp_conn_t *get_conn(skcp_conn_t *conn_ht, uint32_t sid) {
+    skcp_conn_t *conn = NULL;
+    HASH_FIND_INT(conn_ht, &sid, conn);
+    return conn;
+}
+
+static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid, char *ticket, struct sockaddr_in target_addr,
+                              void *user_data) {
     assert(skcp);
-    skcp_conn_t *conn = (skcp_conn_t *)_ALLOC(sizeof(skcp_conn_t));
+    _NEW_OR_EXIT(conn, skcp_conn_t, sizeof(skcp_conn_t));
     conn->last_r_tm = conn->last_w_tm = getmillisecond();
     conn->status = SKCP_CONN_ST_ON;  // SKCP_CONN_ST_READY;
     conn->skcp = skcp;
-    conn->user_data = NULL;  // 在accept阶段初始化
-    if (skcp->mode == SKCP_MODE_CLI) {
-        conn->dest_addr = skcp->servaddr;
-    }
-
-    // conn->waiting_buf_q = NULL;
-
-    if (cid <= 0) {
-        cid = add_new_conn_to_slots(skcp->conn_slots, conn);
-        if (cid == 0) {
-            free_conn(skcp, conn);
-            return NULL;
-        }
-    } else {
-        conn->id = cid;
-        if (replace_conn_to_slots(skcp->conn_slots, conn) == 0) {
-            free_conn(skcp, conn);
-            return NULL;
-        }
-    }
+    conn->user_data = user_data;
+    conn->id = cid;
+    conn->target_addr = target_addr;
+    memcpy(conn->ticket, ticket, SKCP_TICKET_LEN);
+    // memcpy(conn->iv, iv_str, SKCP_IV_LEN);
+    HASH_ADD_INT(skcp->conns, id, conn);
 
     ikcpcb *kcp = ikcp_create(cid, conn);
     skcp_conf_t *conf = skcp->conf;
@@ -490,7 +441,7 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid) {
     ikcp_nodelay(kcp, conf->nodelay, conf->interval, conf->nodelay, conf->nc);
     ikcp_setmtu(kcp, conf->mtu);
 
-    kcp->rx_minrto = 10;  // TODO: for test
+    // kcp->rx_minrto = 10;  // TODO: for test
 
     conn->kcp = kcp;
 
@@ -502,17 +453,164 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid) {
     ev_timer_set(conn->kcp_update_watcher, kcp_interval, kcp_interval);
     ev_timer_start(skcp->loop, conn->kcp_update_watcher);
 
-    // 设置超时定时循环
-    conn->timeout_watcher = malloc(sizeof(ev_timer));
-    conn->timeout_watcher->data = conn;
-    ev_init(conn->timeout_watcher, conn_timeout_cb);
-    ev_timer_set(conn->timeout_watcher, skcp->conf->timeout_interval, skcp->conf->timeout_interval);
-    ev_timer_start(skcp->loop, conn->timeout_watcher);
-
     return conn;
 }
 
-static int kcp_send_raw(skcp_conn_t *conn, const char *buf, int len) {
+static void free_conn(skcp_t *skcp, skcp_conn_t *conn) {
+    if (!skcp || !conn) {
+        return;
+    }
+
+    if (skcp->conns) {
+        HASH_DEL(skcp->conns, conn);
+    }
+
+    if (conn->kcp) {
+        ikcp_release(conn->kcp);
+        conn->kcp = NULL;
+    }
+
+    if (conn->kcp_update_watcher) {
+        ev_timer_stop(skcp->loop, conn->kcp_update_watcher);
+        _FREE_IF(conn->kcp_update_watcher);
+    }
+
+    conn->status = SKCP_CONN_ST_OFF;
+    conn->id = 0;
+    conn->user_data = NULL;
+
+    _FREE_IF(conn);
+}
+
+static void on_recv_req_sid_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in addr) {
+    uint32_t cid = gen_cid(skcp);
+    // create connection in server
+    skcp_conn_t *conn = init_conn(skcp, cid, pkt->ticket, addr, NULL);
+    if (!conn) {
+        return;
+    }
+    // send ack sid cmd to client
+    char *t = pkt->ticket;
+    BUILD_SKCP_PKT(ack_pkt, SKCP_CMD_CTRL_ACK_CID, cid, 0, t, "");
+    if (udp_send(skcp, &ack_pkt, addr) <= 0) {
+        return;
+    }
+
+    skcp->conf->on_accept(skcp, conn->id);
+}
+
+static void on_recv_ack_sid_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in addr) {
+    if (pkt->cid <= 0) {
+        _LOG("invalid sid in ack sid cmd");
+        return;
+    }
+
+    // create connection in client
+    skcp_conn_t *conn = init_conn(skcp, pkt->cid, pkt->ticket, addr, NULL);
+    if (!conn) {
+        return;
+    }
+
+    skcp->conf->on_recv_cid(skcp, conn->id);
+}
+
+static void on_recv_kcp_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in addr) {
+    // check kcp header and cid
+    if (pkt->remain_len < 24) {
+        _LOG("invalid len in kcp recv");
+        return;
+    }
+    uint32_t conv = ikcp_getconv(pkt->payload);
+    if (conv <= 0 || pkt->cid != conv) {
+        _LOG("sid error in kcp recv conv: %u sid: %u", conv, pkt->cid);
+        return;
+    }
+    skcp_conn_t *conn = get_conn(skcp->conns, pkt->cid);
+    if (conn == NULL) {
+        // _LOG("invalid connection in kcp recv %u", pkt->cid);
+        return;
+    }
+    // feed data to kcp
+    ikcp_input(conn->kcp, pkt->payload, pkt->remain_len);
+    ikcp_update(conn->kcp, getms());
+    // read data from kcp
+    int peeksize = ikcp_peeksize(conn->kcp);
+    if (peeksize <= 0) {
+        return;
+    }
+    _NEW_OR_EXIT(recv_buf, char, peeksize);
+    // 返回-1表示数据还没有收完数据，-3表示接受buf太小
+    int recv_len = ikcp_recv(conn->kcp, recv_buf, peeksize);
+    if (recv_len > 0) {
+        ikcp_update(conn->kcp, getms());
+        conn->last_r_tm = getmillisecond();
+        skcp->conf->on_recv_data(skcp, conn->id, recv_buf, recv_len);
+    }
+    _FREE_IF(recv_buf);
+}
+
+static void on_recv_udp_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in addr) {
+    // TODO:
+    _LOG("recv udp data");
+}
+
+static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
+    if (EV_ERROR & revents) {
+        // _LOG("read_cb got invalid event");
+        return;
+    }
+    skcp_t *skcp = (skcp_t *)(watcher->data);
+
+    struct sockaddr_in from_addr;
+    skcp_pkt_t pkt;
+    bzero(&pkt, sizeof(skcp_pkt_t));  // TODO: for test
+    int rlen = udp_recv(skcp, &pkt, &from_addr);
+    if (rlen < 0) {
+        return;
+    }
+
+    // auth ticket
+    if (skcp->conf->on_check_ticket(skcp, pkt.ticket, SKCP_TICKET_LEN) != 0) {
+        _LOG("ticket error");
+        return;
+    }
+    if (pkt.cmd == SKCP_CMD_CTRL_REQ_CID) {
+        // server mode only
+        if (skcp->mode != SKCP_MODE_SERV) {
+            _LOG("receive request cid cmd only in server mode");
+            return;
+        }
+        on_recv_req_sid_pkt(skcp, &pkt, from_addr);
+    } else if (pkt.cmd == SKCP_CMD_CTRL_ACK_CID) {
+        // client mode only
+        if (skcp->mode != SKCP_MODE_CLI) {
+            _LOG("receive ack cid cmd only in client mode");
+            return;
+        }
+        on_recv_ack_sid_pkt(skcp, &pkt, from_addr);
+    } else if (pkt.cmd == SKCP_CMD_DATA_KCP) {
+        on_recv_kcp_pkt(skcp, &pkt, from_addr);
+    } else if (pkt.cmd == SKCP_CMD_DATA_UDP) {
+        on_recv_udp_pkt(skcp, &pkt, from_addr);
+    } else {
+        _LOG("invalid protocol cmd");
+        return;
+    }
+}
+
+/* ------------------------------- public api ------------------------------- */
+
+int skcp_req_cid(skcp_t *skcp, const char *ticket, int len) {
+    if (skcp->mode != SKCP_MODE_CLI || len < SKCP_TICKET_LEN) {
+        return -1;
+    }
+
+    BUILD_SKCP_PKT(pkt, SKCP_CMD_CTRL_REQ_CID, 0, 0, ticket, "");
+    return udp_send(skcp, &pkt, skcp->servaddr);
+}
+
+int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len) {
+    skcp_conn_t *conn = skcp_get_conn(skcp, cid);
     if (!conn || !buf || len <= 0 || conn->status != SKCP_CONN_ST_ON) {
         return -1;
     }
@@ -523,248 +621,36 @@ static int kcp_send_raw(skcp_conn_t *conn, const char *buf, int len) {
         return -1;
     }
     ikcp_update(conn->kcp, getms());
-    ikcp_flush(conn->kcp);  // TODO: for test
     return rt;
-}
 
-static void on_req_cid_cmd(skcp_t *skcp, skcp_cmd_t *cmd, struct sockaddr_in dest_addr) {
-    const uint ack_len = 1 + 1 + SKCP_TICKET_LEN + 1 + SKCP_IV_LEN + 1;
-    // char ack[ack_len] = {0};
-    char *ack = (char *)_ALLOC(ack_len);  // split by "\n", format:"code\ncid\niv"
-    int out_len = 0;
-    char *buf = NULL;
-    if (cmd->payload_len != SKCP_TICKET_LEN) {
-        snprintf(ack, ack_len, "%d", 1);
-        goto send_req_cid_ack;
-    }
-
-    int rt = skcp->conf->on_check_ticket(skcp, cmd->payload, cmd->payload_len);
-    if (rt != 0) {
-        // fail
-        snprintf(ack, ack_len, "%d", 1);
-        goto send_req_cid_ack;
-    }
-    // create connection
-    skcp_conn_t *conn = init_conn(skcp, 0);
-    if (!conn) {
-        // fail
-        snprintf(ack, ack_len, "%d", 1);
-        goto send_req_cid_ack;
-    }
-
-    conn->dest_addr = dest_addr;
-    memcpy(conn->ticket, cmd->payload, SKCP_TICKET_LEN);
-    // reset iv
-    rand_iv(conn->iv);
-
-    skcp->conf->on_accept(skcp, conn->id);
-
-    // send result ok
-    snprintf(ack, ack_len, "%d\n%u\n%s", 0, conn->id, conn->iv);
-    // _LOG("on_req_cid_cmd ack: %s", ack);
-
-send_req_cid_ack:
-    buf = encode_cmd(0, SKCP_CMD_REQ_CID_ACK, ack, strlen(ack), &out_len);
-    _FREEIF(ack);
-    rt = udp_send(skcp, buf, out_len, dest_addr);
-    _FREEIF(buf);
-    if (rt < 0) {
-        skcp_close_conn(skcp, conn->id);
-    }
-}
-
-static void on_req_cid_ack_cmd(skcp_t *skcp, skcp_cmd_t *cmd) {
-    if (cmd->payload_len <= 0 || cmd->payload[1] != '\n' || cmd->payload[0] != '0' ||
-        cmd->payload_len < 4 + SKCP_IV_LEN) {
-        // error
-        return;
-    }
-
-    // success
-    char *p = cmd->payload + 2;
-    int i = 0;
-    for (; i < cmd->payload_len - 2; i++) {
-        if (*p == '\n') {
-            break;
-        }
-        p++;
-    }
-    int scid_len = p - (cmd->payload + 2);
-    char *scid = (char *)_ALLOC(scid_len + 1);
-    memcpy(scid, cmd->payload + 2, scid_len);
-
-    uint32_t cid = atoi(scid);
-    _FREEIF(scid);
-    if (cid <= 0) {
-        // error
-        return;
-    }
-
-    // create connection
-    skcp_conn_t *conn = init_conn(skcp, cid);
-    if (!conn) {
-        // error
-        return;
-    }
-    memcpy(conn->iv, p + 1, cmd->payload_len - i - 2);
-    // conn->status = SKCP_CONN_ST_ON;
-    // TODO: set ticket, to the user to resolve
-
-    // _LOG("on_req_cid_ack_cmd cid: %d iv: %s", conn->id, conn->iv);
-
-    skcp->conf->on_recv_cid(skcp, conn->id);
-}
-
-static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
-    if (EV_ERROR & revents) {
-        // _LOG("read_cb got invalid event");
-        return;
-    }
-    skcp_t *skcp = (skcp_t *)(watcher->data);
-
-    char *raw_buf = (char *)_ALLOC(skcp->conf->r_buf_size);
-    struct sockaddr_in cliaddr;
-    socklen_t cliaddr_len = sizeof(cliaddr);
-    int32_t bytes = recvfrom(skcp->fd, raw_buf, skcp->conf->r_buf_size, 0, (struct sockaddr *)&cliaddr, &cliaddr_len);
-    if (-1 == bytes) {
-        perror("read_cb recvfrom error");
-        _FREEIF(raw_buf);
-        return;
-    }
-
-    // 解密
-    char *plain_buf = raw_buf;
-    int plain_len = bytes;
-    if (strlen(skcp->conf->key) > 0) {
-        plain_buf = aes_decrypt(skcp->conf->key, def_iv, raw_buf, bytes, &plain_len);
-        _FREEIF(raw_buf);
-    }
-
-    uint32_t cid = ikcp_getconv(plain_buf);
-    if (cid == 0) {
-        // pure udp
-        if (plain_len < SKCP_CMD_HEADER_LEN) {
-            _FREEIF(plain_buf);
-            return;
-        }
-        skcp_cmd_t *cmd = decode_cmd(plain_buf, plain_len);
-        _FREEIF(plain_buf);
-        if (!cmd) {
-            // _LOG("decode_cmd error");
-            return;
-        }
-        if (cmd->type == SKCP_CMD_REQ_CID && skcp->mode == SKCP_MODE_SERV) {
-            on_req_cid_cmd(skcp, cmd, cliaddr);
-            _FREEIF(cmd);
-            return;
-        }
-        if (cmd->type == SKCP_CMD_REQ_CID_ACK && skcp->mode == SKCP_MODE_CLI) {
-            on_req_cid_ack_cmd(skcp, cmd);
-            _FREEIF(cmd);
-            return;
-        }
-        _FREEIF(cmd);
-        return;
-    }
-
-    // kcp protocol
-    if (plain_len < 24) {
-        _FREEIF(plain_buf);
-        return;
-    }
-
-    skcp_conn_t *conn = skcp_get_conn(skcp, cid);
-    if (!conn) {
-        _FREEIF(plain_buf);
-        return;
-    }
-    if (skcp->mode == SKCP_MODE_SERV) {
-        conn->dest_addr = cliaddr;
-    }
-
-    ikcp_input(conn->kcp, plain_buf, plain_len);
-    ikcp_update(conn->kcp, getms());
-    _FREEIF(plain_buf);
-
-    int recv_len = 0;
-    char *kcp_recv_buf = NULL;
-    int kcp_recv_buf_len = 0;
-    for (size_t try_cnt = 0; try_cnt < 10; try_cnt++) {
-        kcp_recv_buf_len = skcp->conf->kcp_buf_size * (try_cnt + 1);
-        kcp_recv_buf = (char *)_ALLOC(kcp_recv_buf_len);
-        if (!kcp_recv_buf) {
-            perror("alloc kcp_recv_buf error");
-            return;
-        }
-
-        // 返回-1表示数据还没有收完数据，-3表示接受buf太小
-        recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, kcp_recv_buf_len);
-        ikcp_update(conn->kcp, getms());
-        if (recv_len == -1 || recv_len == -2) {
-            // EAGAIN
-            _FREEIF(kcp_recv_buf);
-            return;
-        }
-
-        if (recv_len == -3) {
-            _FREEIF(kcp_recv_buf);
-            continue;
-        }
-
-        break;  // 有数据
-    }
-
-    // char *kcp_recv_buf = (char *)_ALLOC(skcp->conf->kcp_buf_size);
-    // // 返回-1表示数据还没有收满，-3表示接受buf大小<实际收到的数据大小
-    // int recv_len = ikcp_recv(conn->kcp, kcp_recv_buf, skcp->conf->kcp_buf_size);
-    // ikcp_update(conn->kcp, getms());
-    // if (recv_len < 0) {
-    //     _FREEIF(kcp_recv_buf);
-    //     return;
+    // int times = len / SKCP_MAX_KCP_PAYLOAD_LEN;
+    // if ((len % SKCP_MAX_KCP_PAYLOAD_LEN) > 0) {
+    //     times++;
     // }
 
-    conn->last_r_tm = getmillisecond();
-    skcp->conf->on_recv_data(skcp, conn->id, kcp_recv_buf, recv_len);
-    _FREEIF(kcp_recv_buf);
-}
+    // int wlen = 0;
+    // for (size_t i = 0; i < times; i++) {
+    //     int rt = ikcp_send(conn->kcp, buf, len);
+    //     if (rt < 0) {
+    //         // 发送失败
+    //         return -1;
+    //     }
+    //     wlen += rt;
+    //     ikcp_update(conn->kcp, getms());
+    //     buf += SKCP_MAX_KCP_PAYLOAD_LEN;
+    //     len -= SKCP_MAX_KCP_PAYLOAD_LEN;
+    // }
 
-// static void write_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
-//     if (EV_ERROR & revents) {
-//         _LOG("write_cb got invalid event");
-//         return;
-//     }
-//     skcp_t *skcp = (skcp_t *)(watcher->data);
-//     // TODO:
-// }
-
-/* ------------------------------- public api ------------------------------- */
-
-int skcp_req_cid(skcp_t *skcp, const char *ticket, int len) {
-    if (skcp->mode != SKCP_MODE_CLI) {
-        return -1;
-    }
-
-    int out_len = 0;
-    char *buf = encode_cmd(0, SKCP_CMD_REQ_CID, ticket, len, &out_len);
-    int rt = udp_send(skcp, buf, out_len, skcp->servaddr);
-    _FREEIF(buf);
-    return rt;
-}
-
-int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len) {
-    skcp_conn_t *conn = skcp_get_conn(skcp, cid);
-    if (!conn || conn->status != SKCP_CONN_ST_ON) {
-        return -1;
-    }
-    int rt = kcp_send_raw(conn, buf, len);
-    return rt;
+    // return wlen;
 }
 
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid) {
-    if (!skcp || !skcp->conn_slots || cid <= 0) {
+    if (!skcp || !skcp->conns || cid <= 0) {
         return NULL;
     }
-    return get_conn_from_slots(skcp->conn_slots, cid);
+    skcp_conn_t *conn = NULL;
+    HASH_FIND_INT(skcp->conns, &cid, conn);
+    return conn;
 }
 
 void skcp_close_conn(skcp_t *skcp, uint32_t cid) {
@@ -783,29 +669,31 @@ skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP
         return NULL;
     }
 
-    skcp_t *skcp = (skcp_t *)_ALLOC(sizeof(skcp_t));
+    // skcp_t *skcp = (skcp_t *)_ALLOC(sizeof(skcp_t));
+    _NEW_OR_EXIT(skcp, skcp_t, sizeof(skcp_t));
     skcp->conf = conf;
     skcp->mode = mode;
     skcp->user_data = user_data;
     skcp->loop = loop;
-
-    skcp->conn_slots = init_conn_slots(conf->max_conn_cnt);
-    if (!skcp->conn_slots) {
-        _FREEIF(skcp);
-        return NULL;
+    skcp->conns = NULL;
+    if (strlen(conf->key) > 0) {
+        skcp->key = conf->key;
     }
-    // if (mode == SKCP_MODE_SERV) {
-    // }
+    skcp->cid_seed = 0;
+    if (conf->mtu <= 0 || conf->mtu > KCP_MAX_MTU) {
+        conf->mtu = KCP_MAX_MTU;
+    }
+    _LOG("%f kcp mtu %d", SKCP_MAX_RW_BUF_LEN_16, conf->mtu);
 
     // setup network
     if (mode == SKCP_MODE_CLI) {
         if (init_cli_network(skcp) != 0) {
-            _FREEIF(skcp);
+            _FREE_IF(skcp);
             return NULL;
         }
     } else {
         if (init_serv_network(skcp) != 0) {
-            _FREEIF(skcp);
+            _FREE_IF(skcp);
             return NULL;
         }
     }
@@ -817,12 +705,6 @@ skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP
     ev_io_init(skcp->r_watcher, read_cb, skcp->fd, EV_READ);
     ev_io_start(skcp->loop, skcp->r_watcher);
 
-    // // 设置写事件循环
-    // skcp->w_watcher = malloc(sizeof(struct ev_io));
-    // skcp->w_watcher->data = skcp;
-    // ev_io_init(skcp->w_watcher, write_cb, skcp->fd, EV_WRITE);
-    // ev_io_start(skcp->loop, skcp->w_watcher);
-
     return skcp;
 }
 
@@ -833,22 +715,7 @@ void skcp_free(skcp_t *skcp) {
 
     if (skcp->r_watcher) {
         ev_io_stop(skcp->loop, skcp->r_watcher);
-        _FREEIF(skcp->r_watcher);
-    }
-
-    // if (skcp->timeout_watcher) {
-    //     ev_timer_stop(skcp->loop, skcp->timeout_watcher);
-    //     _FREEIF(skcp->timeout_watcher);
-    // }
-
-    // if (skcp->kcp_update_watcher) {
-    //     ev_timer_stop(skcp->loop, skcp->kcp_update_watcher);
-    //     _FREEIF(skcp->kcp_update_watcher);
-    // }
-
-    if (skcp->w_watcher) {
-        ev_io_stop(skcp->loop, skcp->w_watcher);
-        _FREEIF(skcp->w_watcher);
+        _FREE_IF(skcp->r_watcher);
     }
 
     if (skcp->fd) {
@@ -856,16 +723,17 @@ void skcp_free(skcp_t *skcp) {
         skcp->fd = 0;
     }
 
-    if (skcp->conn_slots) {
-        for (uint32_t i = 0; i < skcp->conn_slots->remain_idx; i++) {
-            uint32_t cid = skcp->conn_slots->remain_id_stack[i];
-            skcp_close_conn(skcp, cid);
+    if (skcp->conns) {
+        skcp_conn_t *conn, *tmp;
+        HASH_ITER(hh, skcp->conns, conn, tmp) {
+            HASH_DEL(skcp->conns, conn);
+            skcp_close_conn(skcp, conn->id);
         }
-        free_conn_slots(skcp->conn_slots);
+        skcp->conns = NULL;
     }
 
     skcp->conf = NULL;
     skcp->user_data = NULL;
 
-    _FREEIF(skcp);
+    _FREE_IF(skcp);
 }
