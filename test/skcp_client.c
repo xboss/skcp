@@ -36,11 +36,13 @@ static int on_check_ticket(skcp_t *skcp, char *ticket, int len) { return 0; }
 
 static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
     assert(buf);
-    assert(buf_len > 0 && buf_len < SKCP_MAX_RW_BUF_LEN);
+    assert(buf_len > 0);
 
-    char msg[SKCP_MAX_RW_BUF_LEN] = {0};
+    // char msg[SKCP_MAX_RW_BUF_LEN] = {0};
+    char *msg = (char *)calloc(1, buf_len + 1);
     memcpy(msg, buf, buf_len);
     _LOG("client on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
+    free(msg);
 }
 static void on_close(skcp_t *skcp, uint32_t cid) {
     _LOG("server on_close cid: %u", cid);
@@ -60,9 +62,17 @@ static void beat_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
         _LOG("send cid request");
     } else {
         // send msg
-        char msg[SKCP_MAX_RW_BUF_LEN] = "hello from client";
-        sprintf(msg, "%llu hello from client", msg_id++);
-        int rt = skcp_send(skcp, g_cid, msg, strlen(msg));
+        // char msg[SKCP_MAX_RW_BUF_LEN] = "hello from client";
+        // sprintf(msg, "%llu hello from client", msg_id++);
+
+#define TEST_MSG_LEN 1501
+        char msg[TEST_MSG_LEN] = {0};
+        for (size_t i = 0; i < TEST_MSG_LEN; i++) {
+            msg[i] = 'X';
+        }
+        msg[TEST_MSG_LEN - 1] = 'M';
+
+        int rt = skcp_send(skcp, g_cid, msg, sizeof(msg));
         assert(rt >= 0);
     }
 }

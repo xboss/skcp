@@ -179,8 +179,9 @@ IP header length: 20B
 UDP header length: 8B
 KCP header length: 24B
 total = skcp_header + kcp_header + kcp_MTU
-kcp_MTU = 1500 - 41 -24 = 1435
-kcp_MTU_16 = 1424
+total = 1500
+total_16 = 1488
+kcp_MTU = 1488 - 41 = 1447
 **/
 
 #define SKCP_HEADER_LEN 41
@@ -189,9 +190,10 @@ kcp_MTU_16 = 1424
 #define SKCP_CMD_CTRL_REQ_CID 'R'
 #define SKCP_CMD_CTRL_ACK_CID 'A'
 
-#define SKCP_MAX_UDP_PAYLOAD_LEN (SKCP_MAX_RW_BUF_LEN - SKCP_HEADER_LEN)
-#define SKCP_MAX_KCP_PAYLOAD_LEN (SKCP_MAX_UDP_PAYLOAD_LEN - 24)
-#define KCP_MAX_MTU_16 (floor(SKCP_MAX_KCP_PAYLOAD_LEN / 16.0) * 16)
+// #define SKCP_MAX_UDP_PAYLOAD_LEN (SKCP_MAX_RW_BUF_LEN - SKCP_HEADER_LEN)
+// #define SKCP_MAX_KCP_PAYLOAD_LEN (SKCP_MAX_UDP_PAYLOAD_LEN - 24)
+#define SKCP_MAX_RW_BUF_LEN_16 (floor(SKCP_MAX_RW_BUF_LEN / 16.0) * 16)
+#define KCP_MAX_MTU floor((SKCP_MAX_RW_BUF_LEN_16 - SKCP_HEADER_LEN))
 
 typedef struct skcp_pkt_s {
     char cmd;
@@ -365,9 +367,10 @@ static int kcp_output(const char *buf, int len, struct IKCPCB *kcp, void *user) 
     // if (conn->skcp->mode == SKCP_MODE_SERV && ikcp_waitsnd(kcp) > 200) {  // TODO: for test
     //     _LOG("kcp_output cid: %u", kcp->conv);
     // }
-    assert(len <= SKCP_MAX_UDP_PAYLOAD_LEN);
+    // assert(len <= SKCP_MAX_UDP_PAYLOAD_LEN);
 
     char *t = conn->ticket;
+    // _LOG("kcp_output ticket:%s", t);
     BUILD_SKCP_PKT(pkt, SKCP_CMD_DATA_KCP, conn->id, len, t, buf);
 
     int rt = udp_send(conn->skcp, &pkt, conn->target_addr);
@@ -412,6 +415,7 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid, char *ticket, struct so
     conn->user_data = user_data;
     conn->id = cid;
     conn->target_addr = target_addr;
+    memcpy(conn->ticket, ticket, SKCP_TICKET_LEN);
 
     HASH_ADD_INT(skcp->conns, id, conn);
 
@@ -470,8 +474,6 @@ static void on_recv_req_sid_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_i
     if (!conn) {
         return;
     }
-    // conn->target_addr = addr;
-    // memcpy(conn->ticket, cmd->payload, SKCP_TICKET_LEN);
     // send ack sid cmd to client
     char *t = pkt->ticket;
     BUILD_SKCP_PKT(ack_pkt, SKCP_CMD_CTRL_ACK_CID, cid, 0, t, NULL);
@@ -517,17 +519,19 @@ static void on_recv_kcp_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in ad
     ikcp_input(conn->kcp, pkt->payload, pkt->remain_len);
     ikcp_update(conn->kcp, getms());
     // read data from kcp
-    char recv_buf[SKCP_MAX_RW_BUF_LEN] = {0};
-    // 返回-1表示数据还没有收完数据，-3表示接受buf太小
-    int recv_len = ikcp_recv(conn->kcp, recv_buf, SKCP_MAX_RW_BUF_LEN);
-    if (recv_len <= 0) {
-        // _LOG("receive from kcp error len: %d", recv_len);
+    int peeksize = ikcp_peeksize(conn->kcp);
+    if (peeksize <= 0) {
         return;
     }
-    ikcp_update(conn->kcp, getms());
-    conn->last_r_tm = getmillisecond();
-
-    skcp->conf->on_recv_data(skcp, conn->id, recv_buf, recv_len);
+    _NEW_OR_EXIT(recv_buf, char, peeksize);
+    // 返回-1表示数据还没有收完数据，-3表示接受buf太小
+    int recv_len = ikcp_recv(conn->kcp, recv_buf, peeksize);
+    if (recv_len > 0) {
+        ikcp_update(conn->kcp, getms());
+        conn->last_r_tm = getmillisecond();
+        skcp->conf->on_recv_data(skcp, conn->id, recv_buf, recv_len);
+    }
+    _FREE_IF(recv_buf);
 }
 
 static void on_recv_udp_pkt(skcp_t *skcp, skcp_pkt_t *pkt, struct sockaddr_in addr) {
@@ -544,6 +548,7 @@ static void read_cb(struct ev_loop *loop, struct ev_io *watcher, int revents) {
 
     struct sockaddr_in from_addr;
     skcp_pkt_t pkt;
+    bzero(&pkt, sizeof(skcp_pkt_t));  // TODO: for test
     int rlen = udp_recv(skcp, &pkt, &from_addr);
     if (rlen < 0) {
         return;
@@ -595,25 +600,33 @@ int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len) {
         return -1;
     }
 
-    int times = len / SKCP_MAX_KCP_PAYLOAD_LEN;
-    if ((len % SKCP_MAX_KCP_PAYLOAD_LEN) > 0) {
-        times++;
+    int rt = ikcp_send(conn->kcp, buf, len);
+    if (rt < 0) {
+        // 发送失败
+        return -1;
     }
+    ikcp_update(conn->kcp, getms());
+    return rt;
 
-    int wlen = 0;
-    for (size_t i = 0; i < times; i++) {
-        int rt = ikcp_send(conn->kcp, buf, len);
-        if (rt < 0) {
-            // 发送失败
-            return -1;
-        }
-        wlen += rt;
-        ikcp_update(conn->kcp, getms());
-        buf += SKCP_MAX_KCP_PAYLOAD_LEN;
-        len -= SKCP_MAX_KCP_PAYLOAD_LEN;
-    }
+    // int times = len / SKCP_MAX_KCP_PAYLOAD_LEN;
+    // if ((len % SKCP_MAX_KCP_PAYLOAD_LEN) > 0) {
+    //     times++;
+    // }
 
-    return wlen;
+    // int wlen = 0;
+    // for (size_t i = 0; i < times; i++) {
+    //     int rt = ikcp_send(conn->kcp, buf, len);
+    //     if (rt < 0) {
+    //         // 发送失败
+    //         return -1;
+    //     }
+    //     wlen += rt;
+    //     ikcp_update(conn->kcp, getms());
+    //     buf += SKCP_MAX_KCP_PAYLOAD_LEN;
+    //     len -= SKCP_MAX_KCP_PAYLOAD_LEN;
+    // }
+
+    // return wlen;
 }
 
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid) {
@@ -650,9 +663,10 @@ skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP
     skcp->conns = NULL;
     skcp->key = conf->key;
     skcp->cid_seed = 0;
-    if (conf->mtu <= 0 || conf->mtu > KCP_MAX_MTU_16) {
-        conf->mtu = KCP_MAX_MTU_16;
+    if (conf->mtu <= 0 || conf->mtu > KCP_MAX_MTU) {
+        conf->mtu = KCP_MAX_MTU;
     }
+    _LOG("%f kcp mtu %d", SKCP_MAX_RW_BUF_LEN_16, conf->mtu);
 
     // setup network
     if (mode == SKCP_MODE_CLI) {
