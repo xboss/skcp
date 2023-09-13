@@ -17,8 +17,8 @@
 
 static struct ev_timer *beat_watcher = NULL;
 static uint32_t g_cid = 0;
-static char *g_ticket = "12345678901234567890123456789012";
-static char *g_key = "12345678123456781234567812345678";
+static char *g_ticket = "xabcdeabcdeabcdeabcdeabcdeabcdey";
+static char *g_key = "qwertqwertqwertqwertqwertqwert12";
 skcp_conf_t *conf = NULL;
 static skcp_t *skcp = NULL;
 struct ev_loop *loop = NULL;
@@ -61,10 +61,6 @@ static void beat_cb(struct ev_loop *loop, struct ev_timer *watcher, int revents)
         assert(rt > 0);
         _LOG("send cid request");
     } else {
-        // send msg
-        // char msg[SKCP_MAX_RW_BUF_LEN] = "hello from client";
-        // sprintf(msg, "%llu hello from client", msg_id++);
-
 #define TEST_MSG_LEN 1501
         char msg[TEST_MSG_LEN] = {0};
         for (size_t i = 0; i < TEST_MSG_LEN; i++) {

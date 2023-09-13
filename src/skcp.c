@@ -84,6 +84,14 @@ inline static uint64_t getmillisecond() {
 
 inline static uint32_t getms() { return (uint32_t)(getmillisecond() & 0xfffffffful); }
 
+// inline static void build_iv(char *iv, const uint32_t cid, const char *ticket) {
+//     char iv_str[SKCP_IV_LEN + 1] = {0};
+//     snprintf(iv_str, SKCP_IV_LEN + 1, "%u", cid);
+//     for (size_t i = strlen(iv_str); i < SKCP_IV_LEN && i < SKCP_TICKET_LEN; i++) {
+//         iv_str[i] = ticket[i];
+//     }
+// }
+
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
 /* -------------------------------------------------------------------------- */
@@ -230,7 +238,7 @@ inline static int skcp_pack(skcp_pkt_t *pkt, char *buf, int len) {
 }
 
 inline static bool skcp_unpack(char *buf, int len, skcp_pkt_t *pkt) {
-    if (!buf || len <= SKCP_HEADER_LEN || !pkt) {
+    if (!buf || len < SKCP_HEADER_LEN || !pkt) {
         return false;
     }
     pkt->cmd = *buf;
@@ -416,7 +424,7 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid, char *ticket, struct so
     conn->id = cid;
     conn->target_addr = target_addr;
     memcpy(conn->ticket, ticket, SKCP_TICKET_LEN);
-
+    // memcpy(conn->iv, iv_str, SKCP_IV_LEN);
     HASH_ADD_INT(skcp->conns, id, conn);
 
     ikcpcb *kcp = ikcp_create(cid, conn);
@@ -661,7 +669,9 @@ skcp_t *skcp_init(skcp_conf_t *conf, struct ev_loop *loop, void *user_data, SKCP
     skcp->user_data = user_data;
     skcp->loop = loop;
     skcp->conns = NULL;
-    skcp->key = conf->key;
+    if (strlen(conf->key) > 0) {
+        skcp->key = conf->key;
+    }
     skcp->cid_seed = 0;
     if (conf->mtu <= 0 || conf->mtu > KCP_MAX_MTU) {
         conf->mtu = KCP_MAX_MTU;

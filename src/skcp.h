@@ -63,6 +63,7 @@ struct skcp_conn_s {
     SKCP_CONN_ST status;
     struct sockaddr_in target_addr;
     char ticket[SKCP_TICKET_LEN + 1];
+    char iv[SKCP_IV_LEN + 1];
     struct ev_timer *kcp_update_watcher;
     UT_hash_handle hh;
 };

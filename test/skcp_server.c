@@ -16,8 +16,8 @@
 static skcp_t *skcp = NULL;
 struct ev_loop *loop = NULL;
 // static uint32_t g_cid = 0;
-static char *g_ticket = "12345678901234567890123456789012";
-static char *g_key = "12345678123456781234567812345678";
+static char *g_ticket = "xabcdeabcdeabcdeabcdeabcdeabcdey";
+static char *g_key = "qwertqwertqwertqwertqwertqwert12";
 skcp_conf_t *conf = NULL;
 
 inline static void char_to_hex(char *src, int len, char *des) {
@@ -36,15 +36,10 @@ static void on_recv_data(skcp_t *skcp, uint32_t cid, char *buf, int buf_len) {
     assert(buf);
     assert(buf_len > 0);
 
-    // char msg[SKCP_MAX_RW_BUF_LEN] = {0};
     char *msg = (char *)calloc(1, buf_len + 1);
     memcpy(msg, buf, buf_len);
     _LOG("server on_recv cid: %u len: %d  msg: %s", cid, buf_len, msg);
 
-    // char msg_send[SKCP_MAX_RW_BUF_LEN] = {0};
-    // char *msg_send = (char *)calloc(1, buf_len);
-    // sprintf(msg_send, "%s hello ack from server", msg);
-    // sprintf(msg_send, "%s", msg);
     int rt = skcp_send(skcp, cid, msg, buf_len);
     assert(rt >= 0);
     free(msg);
