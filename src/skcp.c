@@ -242,9 +242,16 @@ inline static bool skcp_unpack(char *buf, int len, skcp_pkt_t *pkt) {
         return false;
     }
     pkt->cmd = *buf;
+    if (pkt->cmd != SKCP_CMD_DATA_UDP && pkt->cmd != SKCP_CMD_DATA_KCP && pkt->cmd != SKCP_CMD_CTRL_REQ_CID &&
+        pkt->cmd != SKCP_CMD_CTRL_ACK_CID) {
+        return false;
+    }
     pkt->cid = ntohl(*(uint32_t *)(buf + 1));
     memcpy(pkt->ticket, buf + 5, SKCP_TICKET_LEN);
     pkt->remain_len = ntohl(*(uint32_t *)(buf + 37));
+    if (pkt->remain_len > len - SKCP_HEADER_LEN) {
+        return false;
+    }
     if (pkt->remain_len > 0) {
         memcpy(pkt->payload, buf + 41, pkt->remain_len);
     }

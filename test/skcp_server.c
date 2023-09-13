@@ -17,7 +17,7 @@ static skcp_t *skcp = NULL;
 struct ev_loop *loop = NULL;
 // static uint32_t g_cid = 0;
 static char *g_ticket = "xabcdeabcdeabcdeabcdeabcdeabcdey";
-static char *g_key = "qwertqwertqwertqwertqwertqwert12";
+static char *g_key = "12345678901234567890123456789012";
 skcp_conf_t *conf = NULL;
 
 inline static void char_to_hex(char *src, int len, char *des) {

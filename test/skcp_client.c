@@ -18,7 +18,7 @@
 static struct ev_timer *beat_watcher = NULL;
 static uint32_t g_cid = 0;
 static char *g_ticket = "xabcdeabcdeabcdeabcdeabcdeabcdey";
-static char *g_key = "qwertqwertqwertqwertqwertqwert12";
+static char *g_key = "12345678901234567890123456789012";
 skcp_conf_t *conf = NULL;
 static skcp_t *skcp = NULL;
 struct ev_loop *loop = NULL;
