@@ -41,7 +41,6 @@ typedef struct skcp_conf_s {
 
     char *addr;
     uint16_t port;
-    // uint32_t max_conn_cnt;
     char key[SKCP_KEY_LEN + 1];
     char ticket[SKCP_TICKET_LEN + 1];
 
