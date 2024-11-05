@@ -45,12 +45,13 @@ struct skcp_conn_s {
     uint32_t id;
     skcp_t *skcp;
     /* void *user_data; */
-    uint64_t last_r_tm;
-    uint64_t last_w_tm;
-    uint64_t estab_tm;
+    /*     uint64_t last_r_tm;
+        uint64_t last_w_tm;
+        uint64_t estab_tm; */
     ikcpcb *kcp;
     SKCP_CONN_ST status;
-    struct sockaddr_in target_addr;
+    /* struct sockaddr_in target_addr; */
+    void *ud;
     UT_hash_handle hh;
 };
 
@@ -59,6 +60,7 @@ struct skcp_s {
     skcp_conf_t conf;
     skcp_conn_t *conn_tb;
     struct sockaddr_in servaddr;
+    char *cipher_buf;
     void *user_data;
 };
 

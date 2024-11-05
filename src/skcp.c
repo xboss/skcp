@@ -53,19 +53,19 @@ inline static uint32_t getms() { return (uint32_t)(mstime() & 0xfffffffful); }
 /*                                   cipher                                   */
 /* -------------------------------------------------------------------------- */
 
-static const int align_size = AES_BLOCK_SIZE;
-static char *pkcs7_padding(const char *in, int in_len, int *out_len) {
-    int remainder = in_len % align_size;
-    int padding_size = remainder == 0 ? align_size : align_size - remainder;
+/* static const int align_size = AES_BLOCK_SIZE; */
+static int pkcs7_padding(const char *in, int in_len, char **out, int *out_len) {
+    int remainder = in_len % AES_BLOCK_SIZE;
+    int padding_size = remainder == 0 ? AES_BLOCK_SIZE : AES_BLOCK_SIZE - remainder;
     *out_len = in_len + padding_size;
-    char *out = (char *)malloc(*out_len);
-    if (!out) {
-        perror("alloc error");
-        return NULL;
-    }
-    memcpy(out, in, in_len);
-    memset(out + in_len, padding_size, padding_size);
-    return out;
+    /* char *out = (char *)malloc(*out_len); */
+    /*     if (!*out) {
+            perror("alloc error");
+            return _ERR;
+        } */
+    memcpy(*out, in, in_len);
+    memset(*out + in_len, padding_size, padding_size);
+    return _OK;
 }
 
 static int pkcs7_unpadding(const char *in, int in_len) {
@@ -85,17 +85,18 @@ static void pwd2key(char *key, int ken_len, const char *pwd, int pwd_len) {
     }
 }
 
-static char *aes_encrypt(const char *key, const char *in, int in_len, int *out_len) {
-    if (!key || !in || in_len <= 0) {
-        return NULL;
+static int aes_encrypt(const char *key, const char *in, int in_len, char **out, int *out_len) {
+    if (!key || !in || in_len <= 0 || out == NULL || *out == NULL) {
+        return _ERR;
     }
     AES_KEY aes_key;
     if (AES_set_encrypt_key((const unsigned char *)key, 128, &aes_key) < 0) {
-        return NULL;
+        return _ERR;
     }
-    char *out = pkcs7_padding(in, in_len, out_len);
-    char *pi = out;
-    char *po = out;
+    int ret = pkcs7_padding(in, in_len, out, out_len);
+    if (ret != _OK) return _ERR;
+    char *pi = *out;
+    char *po = *out;
     int en_len = 0;
     while (en_len < *out_len) {
         AES_encrypt((unsigned char *)pi, (unsigned char *)po, &aes_key);
@@ -103,24 +104,24 @@ static char *aes_encrypt(const char *key, const char *in, int in_len, int *out_l
         po += AES_BLOCK_SIZE;
         en_len += AES_BLOCK_SIZE;
     }
-    return out;
+    return _OK;
 }
 
-static char *aes_decrypt(const char *key, const char *in, int in_len, int *out_len) {
-    if (!key || !in || in_len <= 0) {
-        return NULL;
+static int aes_decrypt(const char *key, const char *in, int in_len, char **out, int *out_len) {
+    if (!key || !in || in_len <= 0 || out == NULL || *out == NULL) {
+        return _ERR;
     }
     AES_KEY aes_key;
     if (AES_set_decrypt_key((const unsigned char *)key, 128, &aes_key) < 0) {
-        return NULL;
+        return _ERR;
     }
-    char *out = malloc(in_len);
-    if (!out) {
-        perror("alloc error");
-        return NULL;
-    }
-    memset(out, 0, in_len);
-    char *po = out;
+    /*     char *out = malloc(in_len);
+        if (!out) {
+            perror("alloc error");
+            return _ERR;
+        } */
+    memset(*out, 0, in_len);
+    char *po = *out;
     int en_len = 0;
     while (en_len < in_len) {
         AES_decrypt((unsigned char *)in, (unsigned char *)po, &aes_key);
@@ -128,8 +129,8 @@ static char *aes_decrypt(const char *key, const char *in, int in_len, int *out_l
         po += AES_BLOCK_SIZE;
         en_len += AES_BLOCK_SIZE;
     }
-    *out_len = in_len - pkcs7_unpadding(out, en_len);
-    return out;
+    *out_len = in_len - pkcs7_unpadding(*out, en_len);
+    return _OK;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -138,7 +139,7 @@ static char *aes_decrypt(const char *key, const char *in, int in_len, int *out_l
 
 /* ------------------------------- private api ------------------------------ */
 
-static int check_config() {
+static int check_config(skcp_conf_t *conf) {
     /* TODO: */
     return _OK;
 }
@@ -162,17 +163,16 @@ static skcp_conn_t *init_conn(skcp_t *skcp, int32_t cid, struct sockaddr_in targ
     }
 
     skcp_conn_t *_ALLOC(conn, skcp_conn_t *, sizeof(skcp_conn_t));
+    memset(conn, 0, sizeof(skcp_conn_t));
     ikcpcb *kcp = ikcp_create(cid, conn);
     if (kcp == NULL) {
         free(conn);
         _LOG("init skcp connection error. cid:%u", cid);
         return NULL;
     }
-    conn->last_r_tm = conn->last_w_tm = mstime();
     conn->status = SKCP_CONN_ST_ON;
     conn->skcp = skcp;
     conn->id = cid;
-    conn->target_addr = target_addr;
     HASH_ADD_INT(skcp->conn_tb, id, conn);
     kcp->output = kcp_output;
     ikcp_wndsize(kcp, skcp->conf.sndwnd, skcp->conf.rcvwnd);
@@ -233,10 +233,12 @@ skcp_t *skcp_init(int fd, skcp_conf_t *conf, void *user_data) {
         return NULL;
     }
     skcp_t *_ALLOC(skcp, skcp_t *, sizeof(skcp_t));
+    memset(skcp, 0, sizeof(skcp_t));
     skcp->conf = *conf;
     skcp->user_data = user_data;
     skcp->conn_tb = NULL;
     skcp->fd = fd;
+    /* TODO: init cipher buf */
     return skcp;
 }
 
