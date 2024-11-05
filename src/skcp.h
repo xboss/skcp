@@ -28,6 +28,7 @@ typedef struct skcp_conf_s {
     int rcvwnd;
 
     SKCP_MODE mode;
+    /* int is_secret; */
     int r_keepalive; /* seconds */
     int w_keepalive; /* seconds */
 
