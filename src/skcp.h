@@ -20,20 +20,16 @@ typedef struct skcp_s skcp_t;
 
 typedef struct skcp_conf_s {
     int mtu;
-    int interval;
     int nodelay;
     int resend;
     int nc;
     int sndwnd;
     int rcvwnd;
+    int interval; /* millisecond */
 
     SKCP_MODE mode;
-    /* int is_secret; */
-    int r_keepalive; /* seconds */
-    int w_keepalive; /* seconds */
-
-    char addr[INET_ADDRSTRLEN + 1];
-    uint16_t port;
+    /*     char ip[INET_ADDRSTRLEN + 1];
+        uint16_t port; */
     char key[SKCP_CIPHER_KEY_LEN + 1];
 
     int (*skcp_output_cb)(skcp_t *skcp, uint32_t cid, const char *buf, int len);
@@ -51,7 +47,7 @@ struct skcp_conn_s {
         uint64_t estab_tm; */
     ikcpcb *kcp;
     SKCP_CONN_ST status;
-    /* struct sockaddr_in target_addr; */
+    struct sockaddr_in target_sockaddr;
     void *ud;
     UT_hash_handle hh;
 };
@@ -62,24 +58,9 @@ struct skcp_s {
     skcp_conn_t *conn_tb;
     struct sockaddr_in servaddr;
     char *cipher_buf;
+    struct sockaddr_in target_sockaddr;
     void *user_data;
 };
-
-/* #define SKCP_DEF_CONF(vconf)                     \
-    do {                                         \
-        memset((vconf), 0, sizeof(skcp_conf_t)); \
-        (vconf)->interval = 5;                   \
-        (vconf)->mtu = 1424;                     \
-        (vconf)->rcvwnd = 1024;                  \
-        (vconf)->sndwnd = 1024;                  \
-        (vconf)->nodelay = 1;                    \
-        (vconf)->resend = 2;                     \
-        (vconf)->nc = 1;                         \
-        (vconf)->r_keepalive = 600;              \
-        (vconf)->w_keepalive = 600;              \
-        (vconf)->addr = NULL;                    \
-        (vconf)->port = 1111;                    \
-    } while (0) */
 
 skcp_t *skcp_init(int fd, skcp_conf_t *conf, void *user_data);
 void skcp_free(skcp_t *skcp);
@@ -87,6 +68,7 @@ int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len);
 void skcp_close_conn(skcp_t *skcp, uint32_t cid);
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid);
 void skcp_update(skcp_t *skcp, uint32_t cid);
-int skcp_input(skcp_t *skcp, uint32_t cid, const char *buf, int len);
+int skcp_input(skcp_t *skcp, const char *buf, int len, uint32_t *out_cid, char **out, int *out_len);
+skcp_conn_t *skcp_init_conn(skcp_t *skcp, int32_t cid, struct sockaddr_in target_addr);
 
 #endif

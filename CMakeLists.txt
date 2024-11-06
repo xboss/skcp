@@ -15,9 +15,12 @@ aux_source_directory(${PROJECT_SOURCE_DIR}/src DIR_SRCS)
 add_library(skcp SHARED ${DIR_SRCS})
 target_link_libraries(skcp ssl)
 target_link_libraries(skcp crypto)
-#target_link_libraries(skcp ev)
 
 # ############# test #############
-
+aux_source_directory(${PROJECT_SOURCE_DIR}/test DIR_TEST)
+add_executable(test_skcp ${DIR_SRCS} ${DIR_TEST})
+target_link_libraries(test_skcp ssl)
+target_link_libraries(test_skcp crypto)
+target_link_libraries(test_skcp ev)
 
 

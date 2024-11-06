@@ -39,9 +39,7 @@ inline static uint64_t mstime() {
     return millisecond;
 }
 
-inline static uint32_t getms() {
-    return (uint32_t)(mstime() & 0xfffffffful);
-}
+inline static uint32_t getms() { return (uint32_t)(mstime() & 0xfffffffful); }
 
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
@@ -134,7 +132,50 @@ static int aes_decrypt(const char* key, const char* in, int in_len, char** out, 
 /* ------------------------------- private api ------------------------------ */
 
 static int check_config(skcp_conf_t* conf) {
-    /* TODO: */
+    if (!conf) {
+        fprintf(stderr, "config error.\n");
+        return _ERR;
+    }
+    if (conf->mode != SKCP_MODE_CLI && conf->mode != SKCP_MODE_SERV) {
+        fprintf(stderr, "config 'mode' error. %d\n", conf->mode);
+        return _ERR;
+    }
+    /*     if (conf->ip[0] == '\0' || conf->ip[INET_ADDRSTRLEN] != '\0') {
+            fprintf(stderr, "config 'ip' error.\n");
+            return _ERR;
+        }
+        if (conf->port > 65535 || conf->port <= 0) {
+            fprintf(stderr, "config 'port' error. %u\n", conf->port);
+            return _ERR;
+        } */
+    if (conf->mtu <= 0 || conf->mtu % AES_BLOCK_SIZE != 0) {
+        conf->mtu = 512;
+        printf("config 'mtu' use default: %d\n", conf->mtu);
+    }
+    if (conf->rcvwnd <= 0) {
+        conf->rcvwnd = 256;
+        printf("config 'rcvwnd' use default: %d\n", conf->rcvwnd);
+    }
+    if (conf->sndwnd <= 0) {
+        conf->sndwnd = 256;
+        printf("config 'sndwnd' use default: %d\n", conf->sndwnd);
+    }
+    if (conf->nodelay != 0 || conf->nodelay != 1) {
+        conf->nodelay = 1;
+        printf("config 'nodelay' use default: %d\n", conf->nodelay);
+    }
+    if (conf->resend != 0 || conf->resend != 2) {
+        conf->resend = 2;
+        printf("config 'resend' use default: %d\n", conf->resend);
+    }
+    if (conf->nc != 0 || conf->nc != 1) {
+        conf->nc = 1;
+        printf("config 'nc' use default: %d\n", conf->nc);
+    }
+    if (conf->interval <= 0) {
+        conf->interval = 20;
+        printf("config 'interval' use default: %d\n", conf->interval);
+    }
     return _OK;
 }
 
@@ -158,28 +199,6 @@ static int kcp_output(const char* buf, int len, struct IKCPCB* kcp, void* user) 
 }
 
 /* ------------------------------- connection ------------------------------- */
-
-static skcp_conn_t* init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target_addr) {
-    if (!skcp || cid <= 0) return NULL;
-    skcp_conn_t* _ALLOC(conn, skcp_conn_t*, sizeof(skcp_conn_t));
-    memset(conn, 0, sizeof(skcp_conn_t));
-    ikcpcb* kcp = ikcp_create(cid, conn);
-    if (kcp == NULL) {
-        free(conn);
-        _LOG("init skcp connection error. cid:%u", cid);
-        return NULL;
-    }
-    conn->status = SKCP_CONN_ST_ON;
-    conn->skcp = skcp;
-    conn->id = cid;
-    HASH_ADD_INT(skcp->conn_tb, id, conn);
-    kcp->output = kcp_output;
-    ikcp_wndsize(kcp, skcp->conf.sndwnd, skcp->conf.rcvwnd);
-    ikcp_nodelay(kcp, skcp->conf.nodelay, skcp->conf.interval, skcp->conf.nodelay, skcp->conf.nc);
-    ikcp_setmtu(kcp, skcp->conf.mtu);
-    conn->kcp = kcp;
-    return conn;
-}
 
 static void free_conn(skcp_t* skcp, skcp_conn_t* conn) {
     assert(skcp);
@@ -222,6 +241,10 @@ void skcp_close_conn(skcp_t* skcp, uint32_t cid) {
 
 skcp_t* skcp_init(int fd, skcp_conf_t* conf, void* user_data) {
     if (check_config(conf) != _OK) return NULL;
+    char key[SKCP_CIPHER_KEY_LEN + 1];
+    memset(key, 0, sizeof(key));
+    pwd2key(key, sizeof(key), conf->key, strlen(conf->key));
+    memcpy(conf->key, key, sizeof(key));
     skcp_t* _ALLOC(skcp, skcp_t*, sizeof(skcp_t));
     memset(skcp, 0, sizeof(skcp_t));
     skcp->conf = *conf;
@@ -255,19 +278,48 @@ void skcp_update(skcp_t* skcp, uint32_t cid) {
     return;
 }
 
-int skcp_input(skcp_t* skcp, uint32_t cid, const char* buf, int len) {
-    skcp_conn_t* conn = skcp_get_conn(skcp, cid);
-    assert(len <= conn->skcp->conf.mtu);
-    if (!conn || len > conn->skcp->conf.mtu) return _ERR;
+int skcp_input(skcp_t* skcp, const char* buf, int len, uint32_t* out_cid, char** out, int* out_len) {
+    assert(len <= skcp->conf.mtu);
+    if (len > skcp->conf.mtu || !out_cid || !out_len || !out) return _ERR;
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
-    if (conn->skcp->conf.key[0] != '\0') {
-        int ret = aes_decrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
+    if (skcp->conf.key[0] != '\0') {
+        int ret = aes_decrypt(skcp->conf.key, buf, len, &skcp->cipher_buf, &tmp_len);
         if (ret != _OK) return _ERR;
-        tmp_buf = conn->skcp->cipher_buf;
+        tmp_buf = skcp->cipher_buf;
         _LOG("decrypt");
+    }
+    *out_cid = ikcp_getconv(buf);
+    skcp_conn_t* conn = skcp_get_conn(skcp, *out_cid);
+    if (!conn) {
+        _LOG("skcp_input cid:%u does not exist", *out_cid);
+        return _ERR;
     }
     ikcp_input(conn->kcp, tmp_buf, tmp_len);
     ikcp_update(conn->kcp, getms());
+    *out = tmp_buf;
+    *out_len = tmp_len;
     return _OK;
+}
+
+skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target_addr) {
+    if (!skcp || cid <= 0) return NULL;
+    skcp_conn_t* _ALLOC(conn, skcp_conn_t*, sizeof(skcp_conn_t));
+    memset(conn, 0, sizeof(skcp_conn_t));
+    ikcpcb* kcp = ikcp_create(cid, conn);
+    if (kcp == NULL) {
+        free(conn);
+        _LOG("init skcp connection error. cid:%u", cid);
+        return NULL;
+    }
+    conn->status = SKCP_CONN_ST_ON;
+    conn->skcp = skcp;
+    conn->id = cid;
+    HASH_ADD_INT(skcp->conn_tb, id, conn);
+    kcp->output = kcp_output;
+    ikcp_wndsize(kcp, skcp->conf.sndwnd, skcp->conf.rcvwnd);
+    ikcp_nodelay(kcp, skcp->conf.nodelay, skcp->conf.interval, skcp->conf.nodelay, skcp->conf.nc);
+    ikcp_setmtu(kcp, skcp->conf.mtu);
+    conn->kcp = kcp;
+    return conn;
 }
