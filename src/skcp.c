@@ -39,7 +39,9 @@ inline static uint64_t mstime() {
     return millisecond;
 }
 
-inline static uint32_t getms() { return (uint32_t)(mstime() & 0xfffffffful); }
+inline static uint32_t getms() {
+    return (uint32_t)(mstime() & 0xfffffffful);
+}
 
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
@@ -149,7 +151,7 @@ static int check_config(skcp_conf_t* conf) {
             return _ERR;
         } */
     if (conf->mtu <= 0 || conf->mtu % AES_BLOCK_SIZE != 0) {
-        conf->mtu = 512;
+        conf->mtu = 1024;
         printf("config 'mtu' use default: %d\n", conf->mtu);
     }
     if (conf->rcvwnd <= 0) {
@@ -188,7 +190,7 @@ static int kcp_output(const char* buf, int len, struct IKCPCB* kcp, void* user) 
     if (conn->skcp->conf.key[0] != '\0') {
         int ret = aes_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
         if (ret != _OK) return 0;
-        assert(tmp_len == conn->skcp->conf.mtu);
+        assert(tmp_len <= conn->skcp->conf.mtu);
         tmp_buf = conn->skcp->cipher_buf;
         _LOG("encrypt");
     }
@@ -214,6 +216,22 @@ static void free_conn(skcp_t* skcp, skcp_conn_t* conn) {
 }
 
 /* ------------------------------- public api ------------------------------- */
+
+/* int skcp_send(skcp_t* skcp, uint32_t cid, const char* buf, int len) {
+    if (!skcp || cid <= 0 || !buf || len <= 0) return _ERR;
+    skcp_conn_t* conn = skcp_get_conn(skcp, cid);
+    if (!conn || conn->status != SKCP_CONN_ST_ON) return _ERR;
+    int n = len, ret = 0, bytes = 0;
+    if (len / skcp->conf.mtu > 0) n = skcp->conf.mtu;
+    while (n > 0) {
+        ret = ikcp_send(conn->kcp, buf, n);
+        if (ret < 0) return _ERR;
+        n -= skcp->conf.mtu;
+        bytes += ret;
+    }
+    ikcp_update(conn->kcp, getms());
+    return bytes;
+} */
 
 int skcp_send(skcp_t* skcp, uint32_t cid, const char* buf, int len) {
     if (!skcp || cid <= 0 || !buf || len <= 0) return _ERR;
@@ -278,9 +296,9 @@ void skcp_update(skcp_t* skcp, uint32_t cid) {
     return;
 }
 
-int skcp_input(skcp_t* skcp, const char* buf, int len, uint32_t* out_cid, char** out, int* out_len) {
+uint32_t skcp_input(skcp_t* skcp, const char* buf, int len) {
     assert(len <= skcp->conf.mtu);
-    if (len > skcp->conf.mtu || !out_cid || !out_len || !out) return _ERR;
+    if (len > skcp->conf.mtu) return _ERR;
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
     if (skcp->conf.key[0] != '\0') {
@@ -289,17 +307,15 @@ int skcp_input(skcp_t* skcp, const char* buf, int len, uint32_t* out_cid, char**
         tmp_buf = skcp->cipher_buf;
         _LOG("decrypt");
     }
-    *out_cid = ikcp_getconv(buf);
-    skcp_conn_t* conn = skcp_get_conn(skcp, *out_cid);
+    uint32_t cid = ikcp_getconv(tmp_buf);
+    skcp_conn_t* conn = skcp_get_conn(skcp, cid);
     if (!conn) {
-        _LOG("skcp_input cid:%u does not exist", *out_cid);
+        _LOG("skcp_input cid:%u does not exist", cid);
         return _ERR;
     }
     ikcp_input(conn->kcp, tmp_buf, tmp_len);
     ikcp_update(conn->kcp, getms());
-    *out = tmp_buf;
-    *out_len = tmp_len;
-    return _OK;
+    return cid;
 }
 
 skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target_addr) {
@@ -315,6 +331,7 @@ skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target
     conn->status = SKCP_CONN_ST_ON;
     conn->skcp = skcp;
     conn->id = cid;
+    conn->target_sockaddr = target_addr;
     HASH_ADD_INT(skcp->conn_tb, id, conn);
     kcp->output = kcp_output;
     ikcp_wndsize(kcp, skcp->conf.sndwnd, skcp->conf.rcvwnd);
@@ -323,3 +340,41 @@ skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target
     conn->kcp = kcp;
     return conn;
 }
+
+/* return 0 for error, below 0 for EAGAIN */
+int skcp_rcv(skcp_t* skcp, int32_t cid, char* buf, int len) {
+    skcp_conn_t* conn = skcp_get_conn(skcp, cid);
+    if (!conn) {
+        _LOG("skcp_rcv cid:%u does not exist", cid);
+        return 0;
+    }
+    /* 返回-1表示数据还没有收完数据，-3表示接受buf太小 */
+    int rlen = ikcp_recv(conn->kcp, buf, len);
+    ikcp_update(conn->kcp, getms());
+    return rlen;
+}
+
+/* test */
+/* int main(int argc, char const* argv[]) {
+    char msg[] = "hello";
+    char* pwd = "password";
+    char key[SKCP_CIPHER_KEY_LEN + 1];
+    memset(key, 0, sizeof(key));
+    pwd2key(key, sizeof(key), pwd, strlen(pwd));
+
+    int sz = 1024;
+    char* _ALLOC(en, char*, sz);
+    memset(en, 0, sz);
+    int en_len = 0;
+
+    char* _ALLOC(de, char*, sz);
+    memset(de, 0, sz);
+    int de_len = 0;
+
+    int ret = aes_encrypt(key, msg, sizeof(msg), &en, &en_len);
+    assert(ret == _OK);
+
+    ret = aes_decrypt(key, en, en_len, &de, &de_len);
+    _LOG("de:%s", de);
+    return 0;
+} */

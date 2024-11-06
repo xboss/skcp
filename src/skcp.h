@@ -68,7 +68,8 @@ int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len);
 void skcp_close_conn(skcp_t *skcp, uint32_t cid);
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid);
 void skcp_update(skcp_t *skcp, uint32_t cid);
-int skcp_input(skcp_t *skcp, const char *buf, int len, uint32_t *out_cid, char **out, int *out_len);
+uint32_t skcp_input(skcp_t* skcp, const char* buf, int len);
 skcp_conn_t *skcp_init_conn(skcp_t *skcp, int32_t cid, struct sockaddr_in target_addr);
+int skcp_rcv(skcp_t* skcp, int32_t cid, char * buf, int len);
 
 #endif
