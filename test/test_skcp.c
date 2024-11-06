@@ -102,6 +102,7 @@ static int skcp_output_cb(skcp_t* skcp, uint32_t cid, const char* buf, int len) 
         _LOG("udp send error %s", strerror(errno));
         return -1;
     }
+    _LOG("udp send ok. rawlen:%d len:%d", len, ret);
     return ret;
 }
 
@@ -129,8 +130,8 @@ static void on_server_rcv(int cid, const char* buf, int len) {
     _LOG("server rcv:%s len:%d cid:%d", buf, len, cid);
     memset(g_msg, 0, sizeof(g_msg));
     memcpy(g_msg, buf, len);
-    char *ack = " ack...";
-    memcpy(g_msg+len, ack, strlen(ack));
+    char* ack = " ack...";
+    memcpy(g_msg + len, ack, strlen(ack));
     int ret = skcp_send(g_skcp, cid, g_msg, strlen(g_msg));
     assert(ret == 0);
 }
