@@ -190,7 +190,7 @@ static int kcp_output(const char* buf, int len, struct IKCPCB* kcp, void* user) 
     if (conn->skcp->conf.key[0] != '\0') {
         int ret = aes_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
         if (ret != _OK) return 0;
-        assert(tmp_len <= conn->skcp->conf.mtu);
+        assert(tmp_len <= conn->skcp->conf.mtu + AES_BLOCK_SIZE);
         tmp_buf = conn->skcp->cipher_buf;
         _LOG("encrypt");
     }
@@ -270,7 +270,7 @@ skcp_t* skcp_init(int fd, skcp_conf_t* conf, void* user_data) {
     skcp->conn_tb = NULL;
     skcp->fd = fd;
     assert(skcp->conf.mtu % AES_BLOCK_SIZE == 0);
-    _ALLOC(skcp->cipher_buf, char*, skcp->conf.mtu);
+    _ALLOC(skcp->cipher_buf, char*, skcp->conf.mtu + AES_BLOCK_SIZE);
     memset(skcp->cipher_buf, 0, skcp->conf.mtu);
     return skcp;
 }
@@ -297,7 +297,7 @@ void skcp_update(skcp_t* skcp, uint32_t cid) {
 }
 
 uint32_t skcp_input(skcp_t* skcp, const char* buf, int len) {
-    assert(len <= skcp->conf.mtu);
+    assert(len <= skcp->conf.mtu + AES_BLOCK_SIZE);
     if (len > skcp->conf.mtu) return _ERR;
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
@@ -362,19 +362,22 @@ int skcp_rcv(skcp_t* skcp, int32_t cid, char* buf, int len) {
     memset(key, 0, sizeof(key));
     pwd2key(key, sizeof(key), pwd, strlen(pwd));
 
-    int sz = 1024;
+    _LOG("len:%ld msg:%s", strlen(msg), msg);
+
+    int sz = 1024 + 16;
     char* _ALLOC(en, char*, sz);
     memset(en, 0, sz);
     int en_len = 0;
+
+    int ret = aes_encrypt(key, msg, strlen(msg), &en, &en_len);
+    assert(ret == _OK);
+    _LOG("len:%d en:%s", en_len, en);
 
     char* _ALLOC(de, char*, sz);
     memset(de, 0, sz);
     int de_len = 0;
 
-    int ret = aes_encrypt(key, msg, sizeof(msg), &en, &en_len);
-    assert(ret == _OK);
-
     ret = aes_decrypt(key, en, en_len, &de, &de_len);
-    _LOG("de:%s", de);
+    _LOG("len:%d de:%s", de_len, de);
     return 0;
 } */

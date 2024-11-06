@@ -149,7 +149,7 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
             /* _LOG("udp rcv error %s", strerror(errno)); */
             break;
         }
-        assert(rlen <= g_skcp->conf.mtu);
+        assert(rlen <= g_skcp->conf.mtu + 16);
         cid = skcp_input(g_skcp, g_rcv_buf, rlen);
         assert(cid > 0);
         skcp_conn_t* c = skcp_get_conn(g_skcp, cid);
