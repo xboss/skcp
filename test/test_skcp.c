@@ -123,7 +123,7 @@ static void beat_cb(struct ev_loop* loop, ev_timer* watcher, int revents) {
     sprintf(g_msg, "hello %d", g_tick++ % 99999999);
     int ret = skcp_send(g_skcp, g_cid, g_msg, strlen(g_msg));
     assert(ret == 0);
-    _LOG("client send: %s len:%d", g_msg, strlen(g_msg));
+    _LOG("client send: %s len:%lu", g_msg, strlen(g_msg));
 }
 
 static void on_server_rcv(int cid, const char* buf, int len) {
@@ -135,9 +135,7 @@ static void on_server_rcv(int cid, const char* buf, int len) {
     int ret = skcp_send(g_skcp, cid, g_msg, strlen(g_msg));
     assert(ret == 0);
 }
-static void on_client_rcv(int cid, const char* buf, int len) {
-    _LOG("client rcv:%s len:%d cid:%d", buf, len, cid);
-}
+static void on_client_rcv(int cid, const char* buf, int len) { _LOG("client rcv:%s len:%d cid:%d", buf, len, cid); }
 
 static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents) {
     _CHECK_EV;
@@ -145,7 +143,8 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     int rlen = 0, r = 0;
     uint32_t cid = 0;
     do {
-        rlen = recvfrom(g_skcp->fd, g_rcv_buf, g_skcp->conf.mtu, 0, (struct sockaddr*)&g_skcp->target_sockaddr, &addr_len);
+        rlen =
+            recvfrom(g_skcp->fd, g_rcv_buf, g_skcp->conf.mtu, 0, (struct sockaddr*)&g_skcp->target_sockaddr, &addr_len);
         if (rlen <= 0) {
             /* _LOG("udp rcv error %s", strerror(errno)); */
             break;

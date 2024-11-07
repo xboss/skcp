@@ -39,9 +39,7 @@ inline static uint64_t mstime() {
     return millisecond;
 }
 
-inline static uint32_t getms() {
-    return (uint32_t)(mstime() & 0xfffffffful);
-}
+inline static uint32_t getms() { return (uint32_t)(mstime() & 0xfffffffful); }
 
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
@@ -52,11 +50,6 @@ static int pkcs7_padding(const char* in, int in_len, char** out, int* out_len) {
     int remainder = in_len % AES_BLOCK_SIZE;
     int padding_size = remainder == 0 ? AES_BLOCK_SIZE : AES_BLOCK_SIZE - remainder;
     *out_len = in_len + padding_size;
-    /* char *out = (char *)malloc(*out_len); */
-    /*     if (!*out) {
-            perror("alloc error");
-            return _ERR;
-        } */
     memcpy(*out, in, in_len);
     memset(*out + in_len, padding_size, padding_size);
     return _OK;
@@ -109,11 +102,6 @@ static int aes_decrypt(const char* key, const char* in, int in_len, char** out, 
     if (AES_set_decrypt_key((const unsigned char*)key, 128, &aes_key) < 0) {
         return _ERR;
     }
-    /*     char *out = malloc(in_len);
-        if (!out) {
-            perror("alloc error");
-            return _ERR;
-        } */
     memset(*out, 0, in_len);
     char* po = *out;
     int en_len = 0;
