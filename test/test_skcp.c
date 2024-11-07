@@ -37,8 +37,9 @@ static skcp_t* g_skcp = NULL;
 struct ev_loop* g_loop = NULL;
 char g_ip[INET_ADDRSTRLEN + 1];
 uint16_t g_port = 0u;
-char* g_rcv_buf;
+static char* g_rcv_buf;
 static uint32_t g_cid = 1;
+static int g_fd = 0;
 /* static char *g_pwd = "password"; */
 /* skcp_conf_t *g_conf = NULL; */
 
@@ -97,7 +98,7 @@ static int init_network(int is_bind, struct sockaddr_in* target_sockaddr) {
 static int skcp_output_cb(skcp_t* skcp, uint32_t cid, const char* buf, int len) {
     skcp_conn_t* c = skcp_get_conn(skcp, cid);
     assert(c);
-    int ret = sendto(skcp->fd, buf, len, 0, (struct sockaddr*)&c->target_sockaddr, sizeof(c->target_sockaddr));
+    int ret = sendto(g_fd, buf, len, 0, (struct sockaddr*)&c->target_sockaddr, sizeof(c->target_sockaddr));
     if (ret <= 0) {
         _LOG("udp send error %s", strerror(errno));
         return -1;
@@ -143,8 +144,7 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     int rlen = 0, r = 0;
     uint32_t cid = 0;
     do {
-        rlen =
-            recvfrom(g_skcp->fd, g_rcv_buf, g_skcp->conf.mtu, 0, (struct sockaddr*)&g_skcp->target_sockaddr, &addr_len);
+        rlen = recvfrom(g_fd, g_rcv_buf, g_skcp->conf.mtu, 0, (struct sockaddr*)&g_skcp->target_sockaddr, &addr_len);
         if (rlen <= 0) {
             /* _LOG("udp rcv error %s", strerror(errno)); */
             break;
@@ -211,10 +211,10 @@ int main(int argc, char const* argv[]) {
     }
 
     struct sockaddr_in target_sockaddr;
-    int fd = init_network(is_bind, &target_sockaddr);
-    assert(fd > 0);
+    g_fd = init_network(is_bind, &target_sockaddr);
+    assert(g_fd > 0);
 
-    g_skcp = skcp_init(fd, &conf, NULL);
+    g_skcp = skcp_init(&conf, NULL);
     assert(g_skcp);
 
     _ALLOC(g_rcv_buf, char*, g_skcp->conf.mtu);
@@ -228,7 +228,7 @@ int main(int argc, char const* argv[]) {
 #endif
 
     struct ev_io* _ALLOC(r_watcher, struct ev_io*, sizeof(struct ev_io));
-    ev_io_init(r_watcher, on_udp_rcv, fd, EV_READ);
+    ev_io_init(r_watcher, on_udp_rcv, g_fd, EV_READ);
     ev_io_start(g_loop, r_watcher);
 
     skcp_conn_t* newconn = skcp_init_conn(g_skcp, g_cid, target_sockaddr); /* TODO: dynamically init conn*/
@@ -258,6 +258,7 @@ int main(int argc, char const* argv[]) {
     free(update_watcher);
     free(r_watcher);
     skcp_free(g_skcp);
+    close(g_fd);
 
     _LOG("test end...");
     return 0;

@@ -41,7 +41,7 @@ struct skcp_conn_s {
 };
 
 struct skcp_s {
-    int fd;
+    /* int fd; */
     skcp_conf_t conf;
     skcp_conn_t *conn_tb;
     struct sockaddr_in servaddr;
@@ -50,7 +50,7 @@ struct skcp_s {
     void *user_data;
 };
 
-skcp_t *skcp_init(int fd, skcp_conf_t *conf, void *user_data);
+skcp_t *skcp_init(skcp_conf_t *conf, void *user_data);
 void skcp_free(skcp_t *skcp);
 int skcp_send(skcp_t *skcp, uint32_t cid, const char *buf, int len);
 void skcp_close_conn(skcp_t *skcp, uint32_t cid);

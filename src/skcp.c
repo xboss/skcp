@@ -245,7 +245,7 @@ void skcp_close_conn(skcp_t* skcp, uint32_t cid) {
     _LOG("skcp_close_conn cid: %u", cid);
 }
 
-skcp_t* skcp_init(int fd, skcp_conf_t* conf, void* user_data) {
+skcp_t* skcp_init(skcp_conf_t* conf, void* user_data) {
     if (check_config(conf) != _OK) return NULL;
     char key[SKCP_CIPHER_KEY_LEN + 1];
     memset(key, 0, sizeof(key));
@@ -256,7 +256,7 @@ skcp_t* skcp_init(int fd, skcp_conf_t* conf, void* user_data) {
     skcp->conf = *conf;
     skcp->user_data = user_data;
     skcp->conn_tb = NULL;
-    skcp->fd = fd;
+    /* skcp->fd = fd; */
     assert(skcp->conf.mtu % AES_BLOCK_SIZE == 0);
     _ALLOC(skcp->cipher_buf, char*, skcp->conf.mtu + AES_BLOCK_SIZE);
     memset(skcp->cipher_buf, 0, skcp->conf.mtu);
