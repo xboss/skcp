@@ -18,13 +18,13 @@ typedef struct skcp_conn_s skcp_conn_t;
 typedef struct skcp_s skcp_t;
 
 typedef struct skcp_conf_s {
-    int mtu;
-    int nodelay;
-    int resend;
-    int nc;
-    int sndwnd;
-    int rcvwnd;
-    int interval; /* millisecond */
+    int kcp_mtu;
+    int kcp_nodelay;
+    int kcp_resend;
+    int kcp_nc;
+    int kcp_sndwnd;
+    int kcp_rcvwnd;
+    int kcp_interval; /* millisecond */
     SKCP_MODE mode;
     char key[SKCP_CIPHER_KEY_LEN + 1];
     int (*skcp_output_cb)(skcp_t *skcp, uint32_t cid, const char *buf, int len);
@@ -36,17 +36,18 @@ struct skcp_conn_s {
     ikcpcb *kcp;
     SKCP_CONN_ST status;
     struct sockaddr_in target_sockaddr;
+    int ex;
     void *ud;
     UT_hash_handle hh;
 };
 
 struct skcp_s {
-    /* int fd; */
+    int fd;
     skcp_conf_t conf;
     skcp_conn_t *conn_tb;
-    struct sockaddr_in servaddr;
+    /* struct sockaddr_in servaddr; */
     char *cipher_buf;
-    struct sockaddr_in target_sockaddr;
+    /* struct sockaddr_in target_sockaddr; */
     void *user_data;
 };
 
@@ -57,7 +58,9 @@ void skcp_close_conn(skcp_t *skcp, uint32_t cid);
 skcp_conn_t *skcp_get_conn(skcp_t *skcp, uint32_t cid);
 void skcp_update(skcp_t *skcp, uint32_t cid);
 uint32_t skcp_input(skcp_t *skcp, const char *buf, int len);
-skcp_conn_t *skcp_init_conn(skcp_t *skcp, int32_t cid, struct sockaddr_in target_addr);
+skcp_conn_t *skcp_init_conn(skcp_t *skcp, int32_t cid /* , struct sockaddr_in target_addr */);
 int skcp_rcv(skcp_t *skcp, int32_t cid, char *buf, int len);
+int skcp_encrypt(const char *key, const char *in, int in_len, char **out, int *out_len);
+int skcp_decrypt(const char *key, const char *in, int in_len, char **out, int *out_len);
 
 #endif

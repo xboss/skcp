@@ -138,33 +138,33 @@ static int check_config(skcp_conf_t* conf) {
             fprintf(stderr, "config 'port' error. %u\n", conf->port);
             return _ERR;
         } */
-    if (conf->mtu <= 0 || conf->mtu % AES_BLOCK_SIZE != 0) {
-        conf->mtu = 1024;
-        printf("config 'mtu' use default: %d\n", conf->mtu);
+    if (conf->kcp_mtu <= 0 || conf->kcp_mtu % AES_BLOCK_SIZE != 0) {
+        conf->kcp_mtu = 1024;
+        printf("config 'kcp_mtu' use default: %d\n", conf->kcp_mtu);
     }
-    if (conf->rcvwnd <= 0) {
-        conf->rcvwnd = 256;
-        printf("config 'rcvwnd' use default: %d\n", conf->rcvwnd);
+    if (conf->kcp_rcvwnd <= 0) {
+        conf->kcp_rcvwnd = 256;
+        printf("config 'kcp_rcvwnd' use default: %d\n", conf->kcp_rcvwnd);
     }
-    if (conf->sndwnd <= 0) {
-        conf->sndwnd = 256;
-        printf("config 'sndwnd' use default: %d\n", conf->sndwnd);
+    if (conf->kcp_sndwnd <= 0) {
+        conf->kcp_sndwnd = 256;
+        printf("config 'kcp_sndwnd' use default: %d\n", conf->kcp_sndwnd);
     }
-    if (conf->nodelay != 0 || conf->nodelay != 1) {
-        conf->nodelay = 1;
-        printf("config 'nodelay' use default: %d\n", conf->nodelay);
+    if (conf->kcp_nodelay != 0 || conf->kcp_nodelay != 1) {
+        conf->kcp_nodelay = 1;
+        printf("config 'kcp_nodelay' use default: %d\n", conf->kcp_nodelay);
     }
-    if (conf->resend != 0 || conf->resend != 2) {
-        conf->resend = 2;
-        printf("config 'resend' use default: %d\n", conf->resend);
+    if (conf->kcp_resend != 0 || conf->kcp_resend != 2) {
+        conf->kcp_resend = 2;
+        printf("config 'kcp_resend' use default: %d\n", conf->kcp_resend);
     }
-    if (conf->nc != 0 || conf->nc != 1) {
-        conf->nc = 1;
-        printf("config 'nc' use default: %d\n", conf->nc);
+    if (conf->kcp_nc != 0 || conf->kcp_nc != 1) {
+        conf->kcp_nc = 1;
+        printf("config 'kcp_nc' use default: %d\n", conf->kcp_nc);
     }
-    if (conf->interval <= 0) {
-        conf->interval = 20;
-        printf("config 'interval' use default: %d\n", conf->interval);
+    if (conf->kcp_interval <= 0) {
+        conf->kcp_interval = 20;
+        printf("config 'ikcp_interval' use default: %d\n", conf->kcp_interval);
     }
     return _OK;
 }
@@ -175,13 +175,14 @@ static int kcp_output(const char* buf, int len, struct IKCPCB* kcp, void* user) 
     assert(conn->skcp);
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
-    if (conn->skcp->conf.key[0] != '\0') {
-        int ret = aes_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
-        if (ret != _OK) return 0;
-        assert(tmp_len <= conn->skcp->conf.mtu + AES_BLOCK_SIZE);
-        tmp_buf = conn->skcp->cipher_buf;
-        _LOG("encrypt");
-    }
+    /* TODO: */
+    /*     if (conn->skcp->conf.key[0] != '\0') {
+            int ret = aes_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
+            if (ret != _OK) return 0;
+            assert(tmp_len <= conn->skcp->conf.kcp_mtu + AES_BLOCK_SIZE);
+            tmp_buf = conn->skcp->cipher_buf;
+            _LOG("encrypt");
+        } */
     if (conn->skcp->conf.skcp_output_cb) {
         return conn->skcp->conf.skcp_output_cb(conn->skcp, conn->id, tmp_buf, tmp_len);
     }
@@ -257,9 +258,9 @@ skcp_t* skcp_init(skcp_conf_t* conf, void* user_data) {
     skcp->user_data = user_data;
     skcp->conn_tb = NULL;
     /* skcp->fd = fd; */
-    assert(skcp->conf.mtu % AES_BLOCK_SIZE == 0);
-    _ALLOC(skcp->cipher_buf, char*, skcp->conf.mtu + AES_BLOCK_SIZE);
-    memset(skcp->cipher_buf, 0, skcp->conf.mtu);
+    assert(skcp->conf.kcp_mtu % AES_BLOCK_SIZE == 0);
+    _ALLOC(skcp->cipher_buf, char*, skcp->conf.kcp_mtu + AES_BLOCK_SIZE);
+    memset(skcp->cipher_buf, 0, skcp->conf.kcp_mtu);
     return skcp;
 }
 
@@ -285,16 +286,17 @@ void skcp_update(skcp_t* skcp, uint32_t cid) {
 }
 
 uint32_t skcp_input(skcp_t* skcp, const char* buf, int len) {
-    assert(len <= skcp->conf.mtu + AES_BLOCK_SIZE);
-    if (len > skcp->conf.mtu) return _ERR;
+    assert(len <= skcp->conf.kcp_mtu + AES_BLOCK_SIZE);
+    if (len > skcp->conf.kcp_mtu) return _ERR;
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
-    if (skcp->conf.key[0] != '\0') {
-        int ret = aes_decrypt(skcp->conf.key, buf, len, &skcp->cipher_buf, &tmp_len);
-        if (ret != _OK) return _ERR;
-        tmp_buf = skcp->cipher_buf;
-        _LOG("decrypt");
-    }
+    /* TODO: */
+    /*     if (skcp->conf.key[0] != '\0') {
+            int ret = aes_decrypt(skcp->conf.key, buf, len, &skcp->cipher_buf, &tmp_len);
+            if (ret != _OK) return _ERR;
+            tmp_buf = skcp->cipher_buf;
+            _LOG("decrypt");
+        } */
     uint32_t cid = ikcp_getconv(tmp_buf);
     skcp_conn_t* conn = skcp_get_conn(skcp, cid);
     if (!conn) {
@@ -306,7 +308,7 @@ uint32_t skcp_input(skcp_t* skcp, const char* buf, int len) {
     return cid;
 }
 
-skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target_addr) {
+skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid /* , struct sockaddr_in target_addr */) {
     if (!skcp || cid <= 0) return NULL;
     skcp_conn_t* _ALLOC(conn, skcp_conn_t*, sizeof(skcp_conn_t));
     memset(conn, 0, sizeof(skcp_conn_t));
@@ -319,12 +321,12 @@ skcp_conn_t* skcp_init_conn(skcp_t* skcp, int32_t cid, struct sockaddr_in target
     conn->status = SKCP_CONN_ST_ON;
     conn->skcp = skcp;
     conn->id = cid;
-    conn->target_sockaddr = target_addr;
+    /* conn->target_sockaddr = target_addr; */
     HASH_ADD_INT(skcp->conn_tb, id, conn);
     kcp->output = kcp_output;
-    ikcp_wndsize(kcp, skcp->conf.sndwnd, skcp->conf.rcvwnd);
-    ikcp_nodelay(kcp, skcp->conf.nodelay, skcp->conf.interval, skcp->conf.nodelay, skcp->conf.nc);
-    ikcp_setmtu(kcp, skcp->conf.mtu);
+    ikcp_wndsize(kcp, skcp->conf.kcp_sndwnd, skcp->conf.kcp_rcvwnd);
+    ikcp_nodelay(kcp, skcp->conf.kcp_nodelay, skcp->conf.kcp_interval, skcp->conf.kcp_nodelay, skcp->conf.kcp_nc);
+    ikcp_setmtu(kcp, skcp->conf.kcp_mtu);
     conn->kcp = kcp;
     return conn;
 }
@@ -342,30 +344,10 @@ int skcp_rcv(skcp_t* skcp, int32_t cid, char* buf, int len) {
     return rlen;
 }
 
-/* test */
-/* int main(int argc, char const* argv[]) {
-    char msg[] = "hello";
-    char* pwd = "password";
-    char key[SKCP_CIPHER_KEY_LEN + 1];
-    memset(key, 0, sizeof(key));
-    pwd2key(key, sizeof(key), pwd, strlen(pwd));
+int skcp_encrypt(const char* key, const char* in, int in_len, char** out, int* out_len) {
+    return aes_encrypt(key, in, in_len, out, out_len);
+}
 
-    _LOG("len:%ld msg:%s", strlen(msg), msg);
-
-    int sz = 1024 + 16;
-    char* _ALLOC(en, char*, sz);
-    memset(en, 0, sz);
-    int en_len = 0;
-
-    int ret = aes_encrypt(key, msg, strlen(msg), &en, &en_len);
-    assert(ret == _OK);
-    _LOG("len:%d en:%s", en_len, en);
-
-    char* _ALLOC(de, char*, sz);
-    memset(de, 0, sz);
-    int de_len = 0;
-
-    ret = aes_decrypt(key, en, en_len, &de, &de_len);
-    _LOG("len:%d de:%s", de_len, de);
-    return 0;
-} */
+int skcp_decrypt(const char* key, const char* in, int in_len, char** out, int* out_len) {
+    return aes_decrypt(key, in, in_len, out, out_len);
+}

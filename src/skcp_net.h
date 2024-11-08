@@ -1,6 +1,7 @@
 #ifndef _SKCP_NET_H
 #define _SKCP_NET_H
 
+#include <arpa/inet.h>
 #include <ev.h>
 
 #include "skcp.h"
@@ -23,7 +24,9 @@
         printf("\n");        \
     } while (0)
 
-typedef enum { SKCP_NET_CHAN_TCP = 1, SKCP_NET_CHAN_KCP, SKCP_NET_CHAN_UDP } SKCP_NET_CHANNEL_T;
+#define SKCP_NET_HEAD_LEN 9
+
+/* typedef enum { SKCP_NET_CHAN_KCP = 1, SKCP_NET_CHAN_TCP, SKCP_NET_CHAN_UDP } SKCP_NET_CHANNEL_T; */
 
 /* struct skcp_net_s {
     skcp_t* skcp;
@@ -32,9 +35,10 @@ typedef enum { SKCP_NET_CHAN_TCP = 1, SKCP_NET_CHAN_KCP, SKCP_NET_CHAN_UDP } SKC
 };
 typedef struct skcp_net_s skcp_net_t; */
 
-int skcp_init_udp(int is_bind);
+int skcp_init_udp(const char* ip, unsigned short port, struct sockaddr_in* sock, int is_bind);
 /* int skcp_init_tcp_server(); */
-int skcp_net_send();
+int skcp_tcp_read(int fd, char* buf, int len);
+int skcp_tcp_send(int fd, const char* buf, int len);
 
 int skcp_net_set_reuseaddr(int fd);
 int skcp_net_set_nonblocking(int fd);
