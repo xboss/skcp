@@ -18,6 +18,12 @@ target_link_libraries(skcp crypto)
 target_link_libraries(skcp ev)
 
 # ############# test #############
+aux_source_directory(${PROJECT_SOURCE_DIR}/test DIR_TEST)
+add_executable(test_skcp_server ${DIR_SRCS} "${PROJECT_SOURCE_DIR}/test/test_skcp_server.c")
+target_link_libraries(test_skcp_server ssl)
+target_link_libraries(test_skcp_server crypto)
+target_link_libraries(test_skcp_server ev)
+
 #aux_source_directory(${PROJECT_SOURCE_DIR}/test DIR_TEST)
 #add_executable(test_skcp ${DIR_SRCS} ${DIR_TEST})
 #target_link_libraries(test_skcp ssl)

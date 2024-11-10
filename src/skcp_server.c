@@ -13,17 +13,49 @@
 
 struct skcp_tcp_conn_s {
     int fd;
-    int cid;
+    uint32_t cid;
     struct ev_io* r_watcher;
     skcp_server_t* serv;
     UT_hash_handle hh;
 };
 
+struct skcp_udp_conn_s {
+    int fd;
+    uint32_t cid;
+    int ticket_id;
+    struct sockaddr_in target_sockaddr;
+    struct ev_timer* update_watcher;
+    skcp_server_t* serv;
+};
+typedef struct skcp_udp_conn_s skcp_udp_conn_t;
+
+struct skcp_ticket_s {
+    int ticket_id;
+    uint32_t cid;
+    UT_hash_handle hh;
+};
+
+#define _CHECK_EV                  \
+    if (EV_ERROR & revents) {      \
+        _LOG("got invalid event"); \
+        return;                    \
+    }
+
 /* ----------------------------------------- */
 
-static int gen_ticket_id() { return rand() % 100000000; }
+static int gen_ticket_id(skcp_server_t* serv) {
+    assert(serv);
+    int id;
+    skcp_ticket_t* ticket = NULL;
+    do {
+        id = rand() % 100000000;
+        HASH_FIND_INT(serv->ticket_tb, &id, ticket);
+    } while (ticket);
+    return id;
+}
 
 static uint32_t gen_cid(skcp_server_t* serv) {
+    assert(serv);
     uint32_t cid = 0;
     do {
         cid = (uint32_t)rand() % 900000000 + 100000000;
@@ -71,9 +103,46 @@ static int init_tcp_server(const char* listen_ip, uint16_t listen_port) {
     return listen_fd;
 }
 
-/* ----------------------------------------- */
-
 static void close_tcp_conn(skcp_tcp_conn_t* c) { /* TODO: */ }
+
+inline static skcp_udp_conn_t* get_udp_conn(skcp_conn_t* skcp_conn) {
+    assert(skcp_conn);
+    skcp_udp_conn_t* c = (skcp_udp_conn_t*)skcp_conn->ud;
+    assert(c);
+    return c;
+}
+
+static void update_cb(struct ev_loop* loop, ev_timer* watcher, int revents) {
+    _CHECK_EV;
+    assert(watcher);
+    skcp_conn_t* conn = (skcp_conn_t*)(watcher->data);
+    assert(conn);
+    assert(conn->id > 0);
+    skcp_update(conn->skcp, conn->id);
+}
+
+static skcp_conn_t* new_udp_conn(skcp_server_t* serv, uint32_t cid, int ticket_id) {
+    skcp_conn_t* skcp_conn = skcp_init_conn(serv->skcp, cid);
+    if (!skcp_conn) {
+        return NULL;
+    }
+    skcp_udp_conn_t* _ALLOC(udp_conn, skcp_udp_conn_t*, sizeof(skcp_udp_conn_t));
+    udp_conn->cid = skcp_conn->id;
+    udp_conn->fd = serv->udp_fd;
+    udp_conn->serv = serv;
+    udp_conn->ticket_id = ticket_id;
+    udp_conn->update_watcher = NULL;
+    _ALLOC(udp_conn->update_watcher, struct ev_timer*, sizeof(struct ev_timer));
+    double kcp_interval = serv->skcp->conf.kcp_interval / 1000.0;
+    udp_conn->update_watcher->data = serv;
+    ev_init(udp_conn->update_watcher, update_cb);
+    ev_timer_set(udp_conn->update_watcher, 0, kcp_interval);
+    ev_timer_start(serv->loop, udp_conn->update_watcher);
+    skcp_conn->ud = udp_conn;
+    return skcp_conn;
+}
+
+/* ----------------------------------------- */
 
 static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents) {
     if (EV_ERROR & revents) {
@@ -93,7 +162,7 @@ static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     }
     int auth_ret = 1;
     if (serv->auth_cb) {
-        serv->auth_cb(serv->rcv_buf, ret);
+        auth_ret = serv->auth_cb(serv->rcv_buf, ret);
     }
     if (!auth_ret) {
         _LOG("tcp auth error, close fd:%d", conn->fd);
@@ -103,22 +172,22 @@ static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     /* new skcp conn */
     assert(serv->skcp);
     conn->cid = gen_cid(serv);
-    skcp_conn_t* skcp_conn = skcp_init_conn(serv->skcp, conn->cid);
+    int ticket_id = gen_ticket_id(serv);
+    skcp_conn_t* skcp_conn = new_udp_conn(serv, conn->cid, ticket_id);
     if (!skcp_conn) {
         _LOG("init skcp conn error, close fd:%d", conn->fd);
         close_tcp_conn(conn);
         return;
     }
-    /* skcp_conn->ud = conn; */
-    int tick_id = gen_ticket_id();
-    skcp_conn->ex = tick_id;
+    skcp_ticket_t* _ALLOC(ticket, skcp_ticket_t*, sizeof(skcp_ticket_t));
+    HASH_ADD_INT(serv->ticket_tb, ticket_id, ticket);
     /* pack */
-    char ack[sizeof(conn->cid) + sizeof(tick_id)];
+    char ack[sizeof(conn->cid) + sizeof(ticket_id)];
     int ncid = htonl(conn->cid);
-    int ntick_id = htonl(tick_id);
+    int nticket_id = htonl(ticket_id);
     memcpy(ack, &ncid, sizeof(ncid));
-    memcpy(ack + sizeof(ncid), &ntick_id, sizeof(ntick_id));
-    char cipher_buf[sizeof(conn->cid) + sizeof(tick_id) + 16];
+    memcpy(ack + sizeof(ncid), &nticket_id, sizeof(nticket_id));
+    char cipher_buf[sizeof(conn->cid) + sizeof(ticket_id) + 16];
     memset(cipher_buf, 0, sizeof(cipher_buf));
     int cipher_len = 0;
     /* encrypt */
@@ -131,7 +200,7 @@ static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
         return;
     }
     assert(cipher_len <= sizeof(cipher_buf));
-    /* send back cid and tick_id */
+    /* send back cid and ticket_id */
     ret = skcp_tcp_send(conn->fd, cipher_buf, cipher_len);
     close_tcp_conn(conn);
 }
@@ -166,6 +235,10 @@ static void on_accept(struct ev_loop* loop, struct ev_io* watcher, int revents) 
     HASH_ADD_INT(serv->tcp_conn_tb, fd, conn);
 }
 
+static void on_rcv_ping(const char* buf, int len) {
+    /* TODO: */
+}
+
 static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents) {
     if (EV_ERROR & revents) {
         _LOG("got invalid event");
@@ -183,8 +256,7 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     char* tmp_buf = NULL;
     int tmp_len = 0;
     do {
-        rlen =
-            recvfrom(serv->udp_fd, serv->rcv_buf, serv->rw_buf_size, 0, (struct sockaddr*)&target_sockaddr, &addr_len);
+        rlen = recvfrom(serv->udp_fd, serv->rcv_buf, serv->rw_buf_size, 0, (struct sockaddr*)&target_sockaddr, &addr_len);
         if (rlen <= 0) {
             /* _LOG("udp rcv error %s", strerror(errno)); */
             if ((rlen == -1) && ((errno == EINTR) || (errno == EAGAIN) || (errno == EWOULDBLOCK))) {
@@ -205,12 +277,12 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
         tmp_buf = (char*)serv->rcv_buf;
         tmp_len = rlen;
         if (skcp->conf.key[0] != '\0') {
-            int ret = aes_decrypt(skcp->conf.key, serv->rcv_buf, rlen, &skcp->cipher_buf, &tmp_len);
-            if (ret != _OK) return _ERR;
+            int ret = skcp_decrypt(skcp->conf.key, serv->rcv_buf, rlen, &skcp->cipher_buf, &tmp_len);
+            if (ret != _OK) break;
             tmp_buf = skcp->cipher_buf;
             _LOG("decrypt");
         }
-        if (tmp_len < SKCP_NET_HEAD_LEN) {
+        if (tmp_len < SKCP_NET_UDP_HEAD_LEN) {
             _LOG("udp read head length error. fd:%d len:%d", serv->udp_fd, tmp_len);
             break;
         }
@@ -218,26 +290,39 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
         /* upack header */
         char cmd = *tmp_buf;
         int ticket_id = ntohl(*((int*)tmp_buf));
-        cid = ntohl(*((int*)(tmp_buf + 4)));
-        /* TODO:  auth */
-        skcp_conn_t* conn = skcp_get_conn(skcp, cid);
-        if (!conn) {
+        /* cid = ntohl(*((int*)(tmp_buf + 4))); */
+        /* auth */
+        skcp_ticket_t* ticket = NULL;
+        HASH_FIND_INT(serv->ticket_tb, &ticket_id, ticket);
+        if (!ticket) {
+            _LOG("udp read ticket_id:%d error. fd:%d", ticket_id, serv->udp_fd);
+            break;
+        }
+        /* dispatch cmd */
+        if (cmd == SKCP_NET_CMD_PING) {
+            on_rcv_ping(tmp_buf + SKCP_NET_UDP_HEAD_LEN, tmp_len - SKCP_NET_UDP_HEAD_LEN);
+            break;
+        }
+        cid = ticket->cid;
+        skcp_conn_t* c = skcp_get_conn(skcp, cid);
+        if (!c) {
             _LOG("udp read cid:%u does not exist", cid);
             break;
         }
-        if (ticket_id != conn->ex) {
-            _LOG("udp read ticket_id:%d error", ticket_id);
+        if (ticket_id != get_udp_conn(c)->ticket_id) {
+            _LOG("udp read ticket_id:%d error. fd:%d cid:%u", ticket_id, serv->udp_fd, cid);
             break;
         }
-
+        if (skcp_get_cid(tmp_buf) != cid) {
+            _LOG("udp read cid:%d not match error. fd:%d cid:%u", cid, serv->udp_fd, cid);
+            break;
+        }
         cid = skcp_input(skcp, tmp_buf, tmp_len);
         if (cid <= 0) {
-            _LOG("udp read cid error. fd:%d cid:%d", serv->udp_fd, cid);
+            _LOG("skcp_input error. fd:%d cid:%d", serv->udp_fd, cid);
             break;
         }
-        skcp_conn_t* c = skcp_get_conn(skcp, cid);
-        assert(c);
-        c->target_sockaddr = target_sockaddr;
+        get_udp_conn(c)->target_sockaddr = target_sockaddr;
         _LOG("udp rcv fd:%d len:%d", serv->udp_fd, tmp_len);
         r = 0;
         do {
@@ -245,7 +330,7 @@ static void on_udp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
             r = skcp_rcv(skcp, cid, serv->rcv_buf, serv->rw_buf_size);
             if (r < 0) break;
             if (serv->skcp_rcv_cb) {
-                serv->skcp_rcv_cb(cid, serv->rcv_buf + 4, r - 4);
+                serv->skcp_rcv_cb(cid, serv->rcv_buf, r);
             }
         } while (r > 0);
     } while (rlen > 0);
@@ -258,7 +343,7 @@ static int skcp_output_cb(skcp_t* skcp, uint32_t cid, const char* buf, int len) 
     char* tmp_buf = (char*)buf;
     int tmp_len = len;
     if (conn->skcp->conf.key[0] != '\0') {
-        int ret = aes_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
+        int ret = skcp_encrypt(conn->skcp->conf.key, buf, len, &conn->skcp->cipher_buf, &tmp_len);
         if (ret != _OK) return _ERR;
         assert(tmp_len <= conn->skcp->conf.kcp_mtu + 16);
         tmp_buf = conn->skcp->cipher_buf;
@@ -266,8 +351,7 @@ static int skcp_output_cb(skcp_t* skcp, uint32_t cid, const char* buf, int len) 
     }
     skcp_server_t* serv = (skcp_server_t*)conn->skcp->user_data;
     assert(serv);
-    int ret =
-        sendto(serv->udp_fd, buf, len, 0, (struct sockaddr*)&conn->target_sockaddr, sizeof(conn->target_sockaddr));
+    int ret = sendto(serv->udp_fd, buf, len, 0, (struct sockaddr*)&(get_udp_conn(conn)->target_sockaddr), sizeof(get_udp_conn(conn)->target_sockaddr));
     if (ret <= 0) {
         _LOG("udp send error %s", strerror(errno));
         return _ERR;
@@ -278,8 +362,7 @@ static int skcp_output_cb(skcp_t* skcp, uint32_t cid, const char* buf, int len) 
 
 /* ----------------------------------------- */
 
-skcp_server_t* skcp_server_init(struct ev_loop* loop, const char* tcp_listen_ip, uint16_t tcp_listen_port,
-                                const char* udp_listen_ip, uint16_t udp_listen_port, skcp_conf_t* skcp_conf) {
+skcp_server_t* skcp_server_init(struct ev_loop* loop, const char* tcp_listen_ip, uint16_t tcp_listen_port, const char* udp_listen_ip, uint16_t udp_listen_port, skcp_conf_t* skcp_conf) {
     /* TODO: check param*/
 
     srand((unsigned)time(NULL));
@@ -292,6 +375,7 @@ skcp_server_t* skcp_server_init(struct ev_loop* loop, const char* tcp_listen_ip,
         return NULL;
     }
     skcp_conf->skcp_output_cb = skcp_output_cb;
+    /* serv->ticket_id_set = iset_init(0); */
     skcp_t* skcp = skcp_init(skcp_conf, serv);
     if (!skcp) {
         skcp_server_free(serv);
@@ -320,3 +404,30 @@ skcp_server_t* skcp_server_init(struct ev_loop* loop, const char* tcp_listen_ip,
 }
 
 void skcp_server_free(skcp_server_t* serv) { /* TODO: */ }
+
+void skcp_server_close_kcp_conn(skcp_server_t* serv, uint32_t cid) {
+    if (!serv) return;
+    assert(serv->skcp);
+    if (serv->ticket_tb) {
+        skcp_conn_t* conn = skcp_get_conn(serv->skcp, cid);
+        if (conn) {
+            skcp_udp_conn_t* udp_conn = (skcp_udp_conn_t*)conn->ud;
+            assert(udp_conn);
+            skcp_ticket_t* ticket = NULL;
+            HASH_FIND_INT(serv->ticket_tb, &udp_conn->ticket_id, ticket);
+            if (ticket) {
+                assert(ticket->cid == cid);
+                HASH_DEL(serv->ticket_tb, ticket);
+            }
+            ev_timer_stop(serv->loop, udp_conn->update_watcher);
+            free(udp_conn->update_watcher);
+        }
+    }
+    skcp_close_conn(serv->skcp, cid);
+}
+
+void skcp_server_set_cb(skcp_server_t* serv, skcp_rcv_cb_t rcv_cb, skcp_server_auth_cb_t auth_cb) {
+    if (!serv) return;
+    serv->skcp_rcv_cb = rcv_cb;
+    serv->auth_cb = auth_cb;
+}

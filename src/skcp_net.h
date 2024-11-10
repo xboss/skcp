@@ -24,9 +24,16 @@
         printf("\n");        \
     } while (0)
 
-#define SKCP_NET_HEAD_LEN 9
+/* cmd(1B)|ticket_id(4B) */
+#define SKCP_NET_UDP_HEAD_LEN 5
 
-/* typedef enum { SKCP_NET_CHAN_KCP = 1, SKCP_NET_CHAN_TCP, SKCP_NET_CHAN_UDP } SKCP_NET_CHANNEL_T; */
+#define SKCP_NET_CMD_KCP 'k'
+#define SKCP_NET_CMD_PING 'i'
+#define SKCP_NET_CMD_PONG 'o'
+
+/* typedef enum { SKCP_NET_CMD_KCP = 0, SKCP_NET_CMD_PING, SKCP_NET_CMD_PONG } skcp_net_cmd_t; */
+
+/* typedef enum { SKCP_NET_CHAN_KCP = 1, SKCP_NET_CHAN_TCP, SKCP_NET_CHAN_UDP } skcp_net_channel_t; */
 
 /* struct skcp_net_s {
     skcp_t* skcp;

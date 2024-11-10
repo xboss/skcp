@@ -35,8 +35,8 @@ struct skcp_conn_s {
     skcp_t *skcp;
     ikcpcb *kcp;
     SKCP_CONN_ST status;
-    struct sockaddr_in target_sockaddr;
-    int ex;
+    /* struct sockaddr_in target_sockaddr;
+    int ex; */
     void *ud;
     UT_hash_handle hh;
 };
@@ -62,5 +62,6 @@ skcp_conn_t *skcp_init_conn(skcp_t *skcp, int32_t cid /* , struct sockaddr_in ta
 int skcp_rcv(skcp_t *skcp, int32_t cid, char *buf, int len);
 int skcp_encrypt(const char *key, const char *in, int in_len, char **out, int *out_len);
 int skcp_decrypt(const char *key, const char *in, int in_len, char **out, int *out_len);
+uint32_t skcp_get_cid(const char* buf);
 
 #endif

@@ -39,7 +39,9 @@ inline static uint64_t mstime() {
     return millisecond;
 }
 
-inline static uint32_t getms() { return (uint32_t)(mstime() & 0xfffffffful); }
+inline static uint32_t getms() {
+    return (uint32_t)(mstime() & 0xfffffffful);
+}
 
 /* -------------------------------------------------------------------------- */
 /*                                   cipher                                   */
@@ -350,4 +352,9 @@ int skcp_encrypt(const char* key, const char* in, int in_len, char** out, int* o
 
 int skcp_decrypt(const char* key, const char* in, int in_len, char** out, int* out_len) {
     return aes_decrypt(key, in, in_len, out, out_len);
+}
+
+uint32_t skcp_get_cid(const char* buf) {
+    if (!buf) return 0;
+    return ikcp_getconv(buf);
 }
