@@ -52,7 +52,7 @@ int skcp_init_udp(const char* ip, unsigned short port, struct sockaddr_in* sock,
             return _ERR;
         }
     }
-    return _OK;
+    return fd;
 }
 
 int skcp_tcp_send(int fd, const char* buf, int len) {

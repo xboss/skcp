@@ -72,11 +72,8 @@ int main(int argc, char const* argv[]) {
         return 1;
     }
 
-    memcpy(tcp_ip, argv[1], strnlen(argv[1], INET_ADDRSTRLEN));
-    tcp_port = atoi(argv[2]);
-    if (argv[5] && strnlen(argv[5], SKCP_CIPHER_KEY_LEN) > 0) {
-        memcpy(conf.key, argv[5], strnlen(argv[5], SKCP_CIPHER_KEY_LEN));
-    }
+    memcpy(tcp_ip, argv[3], strnlen(argv[3], INET_ADDRSTRLEN));
+    tcp_port = atoi(argv[4]);
     if (tcp_ip[0] == '\0' || tcp_ip[INET_ADDRSTRLEN] != '\0') {
         fprintf(stderr, "'tcp ip' error.\n");
         return 1;

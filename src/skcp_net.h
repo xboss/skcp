@@ -31,6 +31,14 @@
 #define SKCP_NET_CMD_PING 'i'
 #define SKCP_NET_CMD_PONG 'o'
 
+#define SKCP_NET_BASE_FIELDS \
+    skcp_t* skcp;            \
+    struct ev_loop* loop;    \
+    char* rcv_buf;           \
+    int udp_fd;              \
+    int rw_buf_size;         \
+    struct sockaddr_in udp_sockaddr
+
 /* typedef enum { SKCP_NET_CMD_KCP = 0, SKCP_NET_CMD_PING, SKCP_NET_CMD_PONG } skcp_net_cmd_t; */
 
 /* typedef enum { SKCP_NET_CHAN_KCP = 1, SKCP_NET_CHAN_TCP, SKCP_NET_CHAN_UDP } skcp_net_channel_t; */

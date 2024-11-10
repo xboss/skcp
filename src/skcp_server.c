@@ -368,7 +368,7 @@ skcp_server_t* skcp_server_init(struct ev_loop* loop, const char* tcp_listen_ip,
     srand((unsigned)time(NULL));
     skcp_server_t* _ALLOC(serv, skcp_server_t*, sizeof(skcp_server_t));
     memset(serv, 0, sizeof(skcp_server_t));
-
+    serv->loop = loop;
     serv->udp_fd = skcp_init_udp(udp_listen_ip, udp_listen_port, &serv->udp_sockaddr, 1);
     if (serv->udp_fd <= 0) {
         skcp_server_free(serv);
