@@ -31,13 +31,33 @@
 #define SKCP_NET_CMD_PING 'i'
 #define SKCP_NET_CMD_PONG 'o'
 
-#define SKCP_NET_BASE_FIELDS \
-    skcp_t* skcp;            \
-    struct ev_loop* loop;    \
-    char* rcv_buf;           \
-    int udp_fd;              \
-    int rw_buf_size;         \
-    struct sockaddr_in udp_sockaddr
+#define SKCP_NET_BASE_FIELDS         \
+    skcp_t* skcp;                    \
+    struct ev_loop* loop;            \
+    char* rcv_buf;                   \
+    int udp_fd;                      \
+    int rw_buf_size;                 \
+    struct sockaddr_in udp_sockaddr; \
+    skcp_rcv_cb_t skcp_rcv_cb
+
+struct skcp_udp_conn_s {
+    int fd;
+    uint32_t cid;
+    int ticket_id;
+    struct sockaddr_in target_sockaddr;
+    struct ev_timer* update_watcher;
+};
+typedef struct skcp_udp_conn_s skcp_udp_conn_t;
+
+struct skcp_tcp_conn_s {
+    int fd;
+    uint32_t cid;
+    struct ev_io* r_watcher;
+    struct ev_io* w_watcher;
+    void* ctx;
+    UT_hash_handle hh;
+};
+typedef struct skcp_tcp_conn_s skcp_tcp_conn_t;
 
 /* typedef enum { SKCP_NET_CMD_KCP = 0, SKCP_NET_CMD_PING, SKCP_NET_CMD_PONG } skcp_net_cmd_t; */
 
@@ -49,6 +69,8 @@
     char* rcv_buf;
 };
 typedef struct skcp_net_s skcp_net_t; */
+
+typedef void (*skcp_rcv_cb_t)(int cid, const char* buf, int len);
 
 int skcp_init_udp(const char* ip, unsigned short port, struct sockaddr_in* sock, int is_bind);
 /* int skcp_init_tcp_server(); */
