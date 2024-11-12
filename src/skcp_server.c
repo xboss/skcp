@@ -179,6 +179,7 @@ static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
         close_tcp_conn(conn);
         return;
     }
+    if (cipher_buf != serv->rcv_buf) free(cipher_buf);
     skcp_ticket_t* _ALLOC(ticket, skcp_ticket_t*, sizeof(skcp_ticket_t));
     HASH_ADD_INT(serv->ticket_tb, ticket_id, ticket);
     /* pack: cid(4B)|ticket_id(4B) */
@@ -187,24 +188,22 @@ static void on_tcp_rcv(struct ev_loop* loop, struct ev_io* watcher, int revents)
     int nticket_id = htonl(ticket_id);
     memcpy(ack, &ncid, sizeof(ncid));
     memcpy(ack + sizeof(ncid), &nticket_id, sizeof(nticket_id));
-    char cipher_buf[sizeof(conn->cid) + sizeof(ticket_id) + 16];
-    memset(cipher_buf, 0, sizeof(cipher_buf));
-    int cipher_len = 0;
+    char tmp_buf[sizeof(conn->cid) + sizeof(ticket_id) + 16];
+    memset(tmp_buf, 0, sizeof(tmp_buf));
+    int tmp_len = 0;
     /* encrypt */
-    ret = skcp_encrypt(serv->skcp->conf.key, ack, sizeof(ack), (char**)&cipher_buf, &cipher_len);
+    ret = skcp_encrypt(serv->skcp->conf.key, ack, sizeof(ack), (char**)&tmp_buf, &tmp_len);
     if (ret != _OK) {
         _LOG("tcp ack encrypt error, close fd:%d", conn->fd);
-        if (cipher_buf != serv->rcv_buf) free(cipher_buf);
         skcp_close_conn(serv->skcp, conn->cid);
         conn->cid = 0;
         close_tcp_conn(conn);
         return;
     }
-    assert(cipher_len <= sizeof(cipher_buf));
+    assert(tmp_len <= sizeof(tmp_buf));
     /* send back cid and ticket_id */
-    ret = skcp_tcp_send(conn->fd, cipher_buf, cipher_len);
+    ret = skcp_tcp_send(conn->fd, tmp_buf, tmp_len);
     close_tcp_conn(conn);
-    if (cipher_buf != serv->rcv_buf) free(cipher_buf);
 }
 
 static void on_accept(struct ev_loop* loop, struct ev_io* watcher, int revents) {
